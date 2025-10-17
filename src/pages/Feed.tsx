@@ -47,15 +47,65 @@ const Feed = () => {
   const fetchGames = async () => {
     try {
       setLoading(true);
-      // CheapShark API - Get top deals (sorted by descending price savings)
-      const response = await fetch(
-        "https://www.cheapshark.com/api/1.0/deals?storeID=1&upperPrice=50&pageSize=20&sortBy=Savings"
-      );
       
-      if (!response.ok) throw new Error("Erro ao buscar jogos");
+      // List of popular AAA games to search for
+      const popularGames = [
+        "Grand Theft Auto V",
+        "Red Dead Redemption",
+        "Call of Duty",
+        "Resident Evil",
+        "Dark Souls",
+        "Cyberpunk 2077",
+        "The Witcher",
+        "Fallout",
+        "Elder Scrolls",
+        "Assassin's Creed",
+        "Far Cry",
+        "Battlefield",
+        "Borderlands",
+        "Dying Light",
+        "Dead by Daylight",
+      ];
+
+      // Fetch deals for AAA games
+      const allGames: GameDeal[] = [];
       
-      const data = await response.json();
-      setGames(data);
+      for (const gameName of popularGames.slice(0, 10)) {
+        try {
+          const searchResponse = await fetch(
+            `https://www.cheapshark.com/api/1.0/games?title=${encodeURIComponent(gameName)}&limit=1`
+          );
+          const searchData = await searchResponse.json();
+          
+          if (searchData && searchData.length > 0) {
+            const gameId = searchData[0].gameID;
+            const dealsResponse = await fetch(
+              `https://www.cheapshark.com/api/1.0/games?id=${gameId}`
+            );
+            const gameData = await dealsResponse.json();
+            
+            if (gameData.deals && gameData.deals.length > 0) {
+              const bestDeal = gameData.deals.reduce((prev: any, current: any) => 
+                parseFloat(current.price) < parseFloat(prev.price) ? current : prev
+              );
+              
+              allGames.push({
+                dealID: bestDeal.dealID,
+                title: gameData.info.title,
+                thumb: gameData.info.thumb,
+                salePrice: bestDeal.price,
+                normalPrice: bestDeal.retailPrice,
+                savings: bestDeal.savings || "0",
+                storeID: bestDeal.storeID,
+              });
+            }
+          }
+        } catch (err) {
+          console.log(`Error fetching ${gameName}:`, err);
+        }
+      }
+      
+      setGames(allGames);
     } catch (error: any) {
       toast({
         title: "Erro",
@@ -140,48 +190,56 @@ const Feed = () => {
           <div className="text-center py-12">
             <p className="text-lg text-muted-foreground">Carregando jogos...</p>
           </div>
+        ) : filteredGames.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-lg text-muted-foreground">Nenhum jogo encontrado</p>
+          </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {filteredGames.map((game) => (
               <div
                 key={game.dealID}
-                className="bg-card border-2 border-foreground rounded-2xl p-4 flex gap-4 hover:shadow-lg transition-shadow animate-in fade-in duration-300"
+                className="bg-card border-2 border-foreground rounded-xl p-3 flex gap-3 hover:shadow-md transition-all hover:scale-[1.01] animate-in fade-in duration-300"
               >
                 {/* Game Image */}
                 <div className="flex-shrink-0">
                   <img
                     src={game.thumb}
                     alt={game.title}
-                    className="w-32 h-32 object-cover rounded-xl"
+                    className="w-20 h-20 object-cover rounded-lg shadow-sm"
                   />
                 </div>
 
                 {/* Game Info */}
-                <div className="flex-1 space-y-2">
-                  <h3 className="text-lg font-bold text-foreground line-clamp-2">
+                <div className="flex-1 min-w-0 space-y-1">
+                  <h3 className="text-sm font-bold text-foreground line-clamp-2 leading-tight">
                     {game.title}
                   </h3>
                   
-                  <div className="space-y-1 text-sm">
-                    <p className="text-foreground">
-                      <span className="font-semibold">Maior preço:</span>{" "}
-                      R$ {parseFloat(game.normalPrice).toFixed(2)}
-                    </p>
-                    <p className="text-foreground">
-                      <span className="font-semibold">Menor preço:</span>{" "}
-                      <span className="text-green-600 font-bold">
+                  <div className="space-y-0.5 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground">De:</span>
+                      <span className="line-through text-muted-foreground">
+                        R$ {parseFloat(game.normalPrice).toFixed(2)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground">Por:</span>
+                      <span className="text-green-600 font-bold text-base">
                         R$ {parseFloat(game.salePrice).toFixed(2)}
                       </span>
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Economia de {parseFloat(game.savings).toFixed(0)}%
-                    </p>
+                    </div>
+                    {parseFloat(game.savings) > 0 && (
+                      <div className="inline-block px-2 py-0.5 bg-green-600 text-white rounded-full text-xs font-semibold">
+                        -{parseFloat(game.savings).toFixed(0)}%
+                      </div>
+                    )}
                   </div>
                 </div>
 
                 {/* Favorite Button */}
-                <button className="self-start p-2">
-                  <Heart className="w-6 h-6 text-foreground hover:fill-current transition-colors" />
+                <button className="self-start p-1 hover:scale-110 transition-transform">
+                  <Heart className="w-5 h-5 text-foreground hover:fill-current transition-colors" />
                 </button>
               </div>
             ))}
