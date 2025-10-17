@@ -1,11 +1,32 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { useNavigate } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { Gamepad2 } from "lucide-react";
 
 const Index = () => {
+  const navigate = useNavigate();
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">
+      <div className="text-center space-y-8 animate-in fade-in duration-500">
+        <div className="flex justify-center">
+          <Gamepad2 className="w-24 h-24 text-primary" strokeWidth={1.5} />
+        </div>
+        
+        <h1 className="text-4xl md:text-5xl font-bold text-primary">
+          Compare Preços de Jogos
+        </h1>
+        
+        <p className="text-xl md:text-2xl text-foreground max-w-2xl mx-auto">
+          Encontre os melhores preços para seus jogos favoritos!
+        </p>
+        
+        <Button
+          onClick={() => navigate("/auth")}
+          size="lg"
+          className="text-lg h-14 px-12 rounded-full font-bold"
+        >
+          Começar Agora
+        </Button>
       </div>
     </div>
   );
