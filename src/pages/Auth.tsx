@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { User, ArrowLeft } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 const Auth = () => {
   const navigate = useNavigate();
@@ -14,37 +15,92 @@ const Auth = () => {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [username, setUsername] = useState("");
   const [acceptTerms, setAcceptTerms] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!isLogin) {
-      if (password !== confirmPassword) {
-        toast({
-          title: "Erro",
-          description: "As senhas não coincidem",
-          variant: "destructive",
-        });
-        return;
+  useEffect(() => {
+    // Check if user is already logged in
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        navigate("/feed");
       }
-      
-      if (!acceptTerms) {
-        toast({
-          title: "Erro",
-          description: "Você precisa aceitar os termos e condições",
-          variant: "destructive",
-        });
-        return;
-      }
-    }
-    
-    toast({
-      title: isLogin ? "Login realizado!" : "Cadastro realizado!",
-      description: isLogin ? "Bem-vindo de volta!" : "Sua conta foi criada com sucesso!",
     });
-    
-    // Navigate to home page after successful auth
-    setTimeout(() => navigate("/"), 1000);
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session) {
+        navigate("/feed");
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [navigate]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      if (isLogin) {
+        // Login
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (error) throw error;
+
+        toast({
+          title: "Login realizado!",
+          description: "Bem-vindo de volta!",
+        });
+      } else {
+        // Signup
+        if (password !== confirmPassword) {
+          toast({
+            title: "Erro",
+            description: "As senhas não coincidem",
+            variant: "destructive",
+          });
+          setLoading(false);
+          return;
+        }
+
+        if (!acceptTerms) {
+          toast({
+            title: "Erro",
+            description: "Você precisa aceitar os termos e condições",
+            variant: "destructive",
+          });
+          setLoading(false);
+          return;
+        }
+
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: `${window.location.origin}/`,
+            data: {
+              username: username,
+            },
+          },
+        });
+
+        if (error) throw error;
+
+        toast({
+          title: "Cadastro realizado!",
+          description: "Sua conta foi criada com sucesso!",
+        });
+      }
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error.message || "Ocorreu um erro. Tente novamente.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -71,6 +127,7 @@ const Auth = () => {
               onChange={(e) => setEmail(e.target.value)}
               required
               className="text-lg"
+              disabled={loading}
             />
             
             <Input
@@ -80,6 +137,7 @@ const Auth = () => {
               onChange={(e) => setPassword(e.target.value)}
               required
               className="text-lg"
+              disabled={loading}
             />
             
             <div className="text-center space-y-2 pt-4">
@@ -91,6 +149,7 @@ const Auth = () => {
                 type="button"
                 onClick={() => setIsLogin(false)}
                 className="text-primary font-bold text-lg underline hover:text-primary/80 transition-colors"
+                disabled={loading}
               >
                 Cadastrar!
               </button>
@@ -100,8 +159,9 @@ const Auth = () => {
               type="submit"
               className="w-full h-14 text-lg font-bold rounded-full"
               size="lg"
+              disabled={loading}
             >
-              Entrar
+              {loading ? "Entrando..." : "Entrar"}
             </Button>
           </form>
         </div>
@@ -111,6 +171,7 @@ const Auth = () => {
           <button
             onClick={() => setIsLogin(true)}
             className="mb-6 text-primary hover:text-primary/80 transition-colors"
+            disabled={loading}
           >
             <ArrowLeft className="w-8 h-8" />
           </button>
@@ -131,6 +192,7 @@ const Auth = () => {
                 onChange={(e) => setUsername(e.target.value)}
                 required
                 className="text-base"
+                disabled={loading}
               />
               
               <Input
@@ -140,6 +202,7 @@ const Auth = () => {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 className="text-base"
+                disabled={loading}
               />
               
               <Input
@@ -149,6 +212,7 @@ const Auth = () => {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 className="text-base"
+                disabled={loading}
               />
               
               <Input
@@ -158,6 +222,7 @@ const Auth = () => {
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
                 className="text-base"
+                disabled={loading}
               />
               
               <div className="flex items-center space-x-3 py-2">
@@ -166,6 +231,7 @@ const Auth = () => {
                   checked={acceptTerms}
                   onCheckedChange={(checked) => setAcceptTerms(checked as boolean)}
                   className="border-2 border-foreground data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                  disabled={loading}
                 />
                 <label htmlFor="terms" className="text-sm text-foreground cursor-pointer">
                   Eu li e aceito os termos e condições
@@ -176,8 +242,9 @@ const Auth = () => {
                 type="submit"
                 className="w-full h-14 text-lg font-bold rounded-full"
                 size="lg"
+                disabled={loading}
               >
-                Finalizar
+                {loading ? "Finalizando..." : "Finalizar"}
               </Button>
             </form>
           </div>
