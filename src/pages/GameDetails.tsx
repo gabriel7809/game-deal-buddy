@@ -24,6 +24,10 @@ interface Deal {
 interface GameDetails {
   info: GameInfo;
   deals: Deal[];
+  cheapestPriceEver: {
+    price: string;
+    date: number;
+  };
 }
 
 interface Store {
@@ -133,6 +137,22 @@ const GameDetails = () => {
 
   const bestDeal = getBestDeal();
 
+  // Generate description based on game title
+  const getGameDescription = () => {
+    const title = game?.info.title.toLowerCase() || "";
+    if (title.includes("grand theft auto")) return "Explore uma cidade aberta repleta de ação, missões emocionantes e uma narrativa envolvente neste clássico jogo de mundo aberto.";
+    if (title.includes("red dead")) return "Uma épica aventura no Velho Oeste com gráficos impressionantes, história profunda e um mundo vasto para explorar.";
+    if (title.includes("call of duty")) return "Experiência de tiro em primeira pessoa com campanhas intensas e multiplayer competitivo de alto nível.";
+    if (title.includes("resident evil")) return "Terror de sobrevivência icônico com puzzles desafiadores, atmosfera tensa e combates contra criaturas aterrorizantes.";
+    if (title.includes("dark souls")) return "RPG de ação desafiador conhecido por sua dificuldade brutal, combate tático e design de mundo interconectado.";
+    if (title.includes("cyberpunk")) return "RPG futurista em mundo aberto ambientado em Night City, com personalização profunda e escolhas que impactam a história.";
+    if (title.includes("witcher")) return "RPG de fantasia épico com narrativa rica, decisões morais complexas e combates estratégicos contra monstros.";
+    if (title.includes("fallout")) return "RPG pós-apocalíptico em mundo aberto com sistema de escolhas profundo e exploração de terras devastadas.";
+    if (title.includes("elder scrolls")) return "MMORPG massivo ambientado no universo Elder Scrolls, com exploração, batalhas épicas e milhares de quests.";
+    if (title.includes("assassin")) return "Aventura de ação furtiva com parkour fluido, combates dinâmicos e narrativa histórica envolvente.";
+    return "Jogo aclamado pela crítica com gameplay envolvente, gráficos impressionantes e experiência única para os jogadores.";
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background pb-20">
@@ -191,13 +211,17 @@ const GameDetails = () => {
             />
           </div>
           
-          <div className="mt-6 space-y-3">
+          <div className="mt-6 space-y-4">
             <h1 className="text-3xl md:text-4xl font-bold text-foreground">
               {game.info.title}
             </h1>
             
+            <p className="text-muted-foreground leading-relaxed">
+              {getGameDescription()}
+            </p>
+
             {game.info.steamAppID && (
-              <p className="text-sm text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Steam App ID: {game.info.steamAppID}
               </p>
             )}
@@ -248,10 +272,10 @@ const GameDetails = () => {
           </Card>
         )}
 
-        {/* All Stores Comparison */}
+        {/* Price Comparison Table */}
         <Card>
           <CardHeader>
-            <CardTitle>Todas as Lojas</CardTitle>
+            <CardTitle>Comparação de Preços</CardTitle>
           </CardHeader>
           <CardContent>
             {game.deals.length === 0 ? (
@@ -259,42 +283,62 @@ const GameDetails = () => {
                 Nenhuma oferta disponível no momento
               </p>
             ) : (
-              <div className="space-y-3">
-                {game.deals.map((deal) => (
-                  <div
-                    key={deal.dealID}
-                    className="flex items-center justify-between p-4 rounded-xl border-2 border-foreground/10 hover:border-primary/30 transition-all hover:shadow-sm"
-                  >
-                    <div className="flex-1 space-y-1">
-                      <p className="font-semibold text-foreground">
-                        {getStoreName(deal.storeID)}
-                      </p>
-                      <div className="flex items-center gap-3">
-                        {parseFloat(deal.savings) > 0 && (
-                          <span className="text-sm text-muted-foreground line-through">
-                            R$ {convertToBRL(deal.retailPrice)}
-                          </span>
-                        )}
-                        <span className="text-xl font-bold text-green-600">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="px-4 py-3 text-left text-sm font-semibold text-foreground">
+                        Loja
+                      </th>
+                      <th className="px-4 py-3 text-left text-sm font-semibold text-foreground">
+                        Preço Normal
+                      </th>
+                      <th className="px-4 py-3 text-left text-sm font-semibold text-foreground">
+                        Preço Atual
+                      </th>
+                      <th className="px-4 py-3 text-left text-sm font-semibold text-foreground">
+                        Desconto
+                      </th>
+                      <th className="px-4 py-3 text-left text-sm font-semibold text-foreground">
+                        Ação
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {game.deals.map((deal) => (
+                      <tr key={deal.dealID} className="hover:bg-muted/50 transition-colors">
+                        <td className="px-4 py-3 text-sm font-medium text-foreground">
+                          {getStoreName(deal.storeID)}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-muted-foreground line-through">
+                          R$ {convertToBRL(deal.retailPrice)}
+                        </td>
+                        <td className="px-4 py-3 text-sm font-bold text-green-600">
                           R$ {convertToBRL(deal.price)}
-                        </span>
-                        {parseFloat(deal.savings) > 0 && (
-                          <span className="px-2 py-0.5 bg-green-600/10 text-green-600 rounded-full text-xs font-semibold">
-                            -{parseFloat(deal.savings).toFixed(0)}%
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <Button
-                      variant="secondary"
-                      onClick={() => window.open(getDealUrl(deal.storeID, deal.dealID), "_blank")}
-                      className="gap-2"
-                    >
-                      Ver Oferta
-                      <ExternalLink className="w-4 h-4" />
-                    </Button>
-                  </div>
-                ))}
+                        </td>
+                        <td className="px-4 py-3">
+                          {parseFloat(deal.savings) > 0 ? (
+                            <span className="inline-block px-2 py-1 bg-green-600 text-white rounded-full text-xs font-semibold">
+                              -{parseFloat(deal.savings).toFixed(0)}%
+                            </span>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">-</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <Button
+                            size="sm"
+                            onClick={() => window.open(getDealUrl(deal.storeID, deal.dealID), "_blank")}
+                            className="gap-2"
+                          >
+                            Comprar
+                            <ExternalLink className="w-4 h-4" />
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </CardContent>

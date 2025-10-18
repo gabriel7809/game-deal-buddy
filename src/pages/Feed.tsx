@@ -15,6 +15,8 @@ interface GameDeal {
   normalPrice: string;
   savings: string;
   storeID: string;
+  cheapestPrice: string;
+  genre: string;
 }
 
 const Feed = () => {
@@ -67,32 +69,32 @@ const Feed = () => {
     try {
       setLoading(true);
       
-      // List of popular AAA games to search for
+      // List of popular AAA games with genres
       const popularGames = [
-        "Grand Theft Auto V",
-        "Red Dead Redemption",
-        "Call of Duty",
-        "Resident Evil",
-        "Dark Souls",
-        "Cyberpunk 2077",
-        "The Witcher",
-        "Fallout",
-        "Elder Scrolls",
-        "Assassin's Creed",
-        "Far Cry",
-        "Battlefield",
-        "Borderlands",
-        "Dying Light",
-        "Dead by Daylight",
+        { name: "Grand Theft Auto V", genre: "Ação/Aventura" },
+        { name: "Red Dead Redemption", genre: "Ação/Aventura" },
+        { name: "Call of Duty", genre: "FPS" },
+        { name: "Resident Evil", genre: "Terror/Sobrevivência" },
+        { name: "Dark Souls", genre: "RPG/Ação" },
+        { name: "Cyberpunk 2077", genre: "RPG/Ação" },
+        { name: "The Witcher", genre: "RPG/Aventura" },
+        { name: "Fallout", genre: "RPG/Aventura" },
+        { name: "Elder Scrolls", genre: "MMORPG" },
+        { name: "Assassin's Creed", genre: "Ação/Aventura" },
+        { name: "Far Cry", genre: "FPS/Aventura" },
+        { name: "Battlefield", genre: "FPS" },
+        { name: "Borderlands", genre: "FPS/RPG" },
+        { name: "Dying Light", genre: "Terror/Ação" },
+        { name: "Dead by Daylight", genre: "Terror/Multiplayer" },
       ];
 
       // Fetch deals for AAA games
       const allGames: GameDeal[] = [];
       
-      for (const gameName of popularGames.slice(0, 10)) {
+      for (const game of popularGames.slice(0, 10)) {
         try {
           const searchResponse = await fetch(
-            `https://www.cheapshark.com/api/1.0/games?title=${encodeURIComponent(gameName)}&limit=1`
+            `https://www.cheapshark.com/api/1.0/games?title=${encodeURIComponent(game.name)}&limit=1`
           );
           const searchData = await searchResponse.json();
           
@@ -117,11 +119,13 @@ const Feed = () => {
                 normalPrice: bestDeal.retailPrice,
                 savings: bestDeal.savings || "0",
                 storeID: bestDeal.storeID,
+                cheapestPrice: gameData.cheapestPriceEver?.price || bestDeal.price,
+                genre: game.genre,
               });
             }
           }
         } catch (err) {
-          console.log(`Error fetching ${gameName}:`, err);
+          console.log(`Error fetching ${game.name}:`, err);
         }
       }
       
@@ -233,25 +237,35 @@ const Feed = () => {
 
                 {/* Game Info */}
                 <div className="flex-1 min-w-0 space-y-1">
-                  <h3 className="text-sm font-bold text-foreground line-clamp-2 leading-tight">
+                  <h3 className="text-sm font-bold text-foreground line-clamp-1 leading-tight">
                     {game.title}
                   </h3>
                   
+                  <p className="text-xs text-muted-foreground mb-1">
+                    {game.genre}
+                  </p>
+                  
                   <div className="space-y-0.5 text-xs">
                     <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground">De:</span>
+                      <span className="text-muted-foreground">Base:</span>
                       <span className="line-through text-muted-foreground">
                         R$ {convertToBRL(game.normalPrice)}
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground">Por:</span>
+                      <span className="text-muted-foreground">Atual:</span>
                       <span className="text-green-600 font-bold text-base">
                         R$ {convertToBRL(game.salePrice)}
                       </span>
                     </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground">Menor:</span>
+                      <span className="text-primary font-semibold text-xs">
+                        R$ {convertToBRL(game.cheapestPrice)}
+                      </span>
+                    </div>
                     {parseFloat(game.savings) > 0 && (
-                      <div className="inline-block px-2 py-0.5 bg-green-600 text-white rounded-full text-xs font-semibold">
+                      <div className="inline-block px-2 py-0.5 bg-green-600 text-white rounded-full text-xs font-semibold mt-1">
                         -{parseFloat(game.savings).toFixed(0)}%
                       </div>
                     )}
