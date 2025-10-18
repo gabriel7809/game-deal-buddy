@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 
 interface GameDeal {
+  gameID: string;
   dealID: string;
   title: string;
   thumb: string;
@@ -90,6 +91,7 @@ const Feed = () => {
               );
               
               allGames.push({
+                gameID: gameId,
                 dealID: bestDeal.dealID,
                 title: gameData.info.title,
                 thumb: gameData.info.thumb,
@@ -199,7 +201,8 @@ const Feed = () => {
             {filteredGames.map((game) => (
               <div
                 key={game.dealID}
-                className="bg-card border-2 border-foreground rounded-xl p-3 flex gap-3 hover:shadow-md transition-all hover:scale-[1.01] animate-in fade-in duration-300"
+                onClick={() => navigate(`/game/${game.gameID}`)}
+                className="bg-card border-2 border-foreground rounded-xl p-3 flex gap-3 hover:shadow-md transition-all hover:scale-[1.01] animate-in fade-in duration-300 cursor-pointer"
               >
                 {/* Game Image */}
                 <div className="flex-shrink-0">
