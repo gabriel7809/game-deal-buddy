@@ -23,6 +23,7 @@ const Feed = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState<"genre" | "discount" | "alphabetic">("discount");
+  const [exchangeRate, setExchangeRate] = useState(5.5);
 
   useEffect(() => {
     // Check authentication
@@ -43,7 +44,24 @@ const Feed = () => {
 
   useEffect(() => {
     fetchGames();
+    fetchExchangeRate();
   }, []);
+
+  const fetchExchangeRate = async () => {
+    try {
+      const response = await fetch("https://api.exchangerate-api.com/v4/latest/USD");
+      const data = await response.json();
+      if (data.rates && data.rates.BRL) {
+        setExchangeRate(data.rates.BRL);
+      }
+    } catch (error) {
+      console.error("Error fetching exchange rate:", error);
+    }
+  };
+
+  const convertToBRL = (usdPrice: string) => {
+    return (parseFloat(usdPrice) * exchangeRate).toFixed(2);
+  };
 
   const fetchGames = async () => {
     try {
@@ -223,13 +241,13 @@ const Feed = () => {
                     <div className="flex items-center gap-2">
                       <span className="text-muted-foreground">De:</span>
                       <span className="line-through text-muted-foreground">
-                        R$ {parseFloat(game.normalPrice).toFixed(2)}
+                        R$ {convertToBRL(game.normalPrice)}
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-muted-foreground">Por:</span>
                       <span className="text-green-600 font-bold text-base">
-                        R$ {parseFloat(game.salePrice).toFixed(2)}
+                        R$ {convertToBRL(game.salePrice)}
                       </span>
                     </div>
                     {parseFloat(game.savings) > 0 && (
