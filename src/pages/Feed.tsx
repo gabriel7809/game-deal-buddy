@@ -7,15 +7,13 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 
 interface GameDeal {
-  gameID: string;
-  dealID: string;
+  appid: string;
   title: string;
-  thumb: string;
-  salePrice: string;
-  normalPrice: string;
-  savings: string;
-  storeID: string;
-  cheapestPrice: string;
+  header_image: string;
+  current_price: number;
+  original_price: number;
+  discount_percent: number;
+  price_formatted: string;
   genre: string;
 }
 
@@ -25,7 +23,6 @@ const Feed = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState<"genre" | "discount" | "alphabetic">("discount");
-  const [exchangeRate, setExchangeRate] = useState(5.5);
 
   useEffect(() => {
     // Check authentication
@@ -46,86 +43,56 @@ const Feed = () => {
 
   useEffect(() => {
     fetchGames();
-    fetchExchangeRate();
   }, []);
-
-  const fetchExchangeRate = async () => {
-    try {
-      const response = await fetch("https://api.exchangerate-api.com/v4/latest/USD");
-      const data = await response.json();
-      if (data.rates && data.rates.BRL) {
-        setExchangeRate(data.rates.BRL);
-      }
-    } catch (error) {
-      console.error("Error fetching exchange rate:", error);
-    }
-  };
-
-  const convertToBRL = (usdPrice: string) => {
-    return (parseFloat(usdPrice) * exchangeRate).toFixed(2);
-  };
 
   const fetchGames = async () => {
     try {
       setLoading(true);
       
-      // List of popular AAA games with genres
+      // Lista de jogos populares com seus Steam App IDs
       const popularGames = [
-        { name: "Grand Theft Auto V", genre: "Ação/Aventura" },
-        { name: "Red Dead Redemption", genre: "Ação/Aventura" },
-        { name: "Call of Duty", genre: "FPS" },
-        { name: "Resident Evil", genre: "Terror/Sobrevivência" },
-        { name: "Dark Souls", genre: "RPG/Ação" },
-        { name: "Cyberpunk 2077", genre: "RPG/Ação" },
-        { name: "The Witcher", genre: "RPG/Aventura" },
-        { name: "Fallout", genre: "RPG/Aventura" },
-        { name: "Elder Scrolls", genre: "MMORPG" },
-        { name: "Assassin's Creed", genre: "Ação/Aventura" },
-        { name: "Far Cry", genre: "FPS/Aventura" },
-        { name: "Battlefield", genre: "FPS" },
-        { name: "Borderlands", genre: "FPS/RPG" },
-        { name: "Dying Light", genre: "Terror/Ação" },
-        { name: "Dead by Daylight", genre: "Terror/Multiplayer" },
+        { appid: "271590", genre: "Ação/Aventura" }, // Grand Theft Auto V
+        { appid: "1174180", genre: "Ação/Aventura" }, // Red Dead Redemption 2
+        { appid: "1938090", genre: "FPS" }, // Call of Duty: Black Ops 6
+        { appid: "2050650", genre: "Terror/Sobrevivência" }, // Resident Evil 4
+        { appid: "570940", genre: "RPG/Ação" }, // Dark Souls Remastered
+        { appid: "1091500", genre: "RPG/Ação" }, // Cyberpunk 2077
+        { appid: "292030", genre: "RPG/Aventura" }, // The Witcher 3
+        { appid: "1151340", genre: "RPG/Aventura" }, // Fallout 4
+        { appid: "306130", genre: "MMORPG" }, // The Elder Scrolls Online
+        { appid: "2215430", genre: "Ação/Aventura" }, // Assassin's Creed Mirage
       ];
 
-      // Fetch deals for AAA games
       const allGames: GameDeal[] = [];
       
-      for (const game of popularGames.slice(0, 10)) {
+      for (const game of popularGames) {
         try {
-          const searchResponse = await fetch(
-            `https://www.cheapshark.com/api/1.0/games?title=${encodeURIComponent(game.name)}&limit=1`
+          const response = await fetch(
+            `https://store.steampowered.com/api/appdetails?appids=${game.appid}&cc=br&l=pt`
           );
-          const searchData = await searchResponse.json();
+          const data = await response.json();
           
-          if (searchData && searchData.length > 0) {
-            const gameId = searchData[0].gameID;
-            const dealsResponse = await fetch(
-              `https://www.cheapshark.com/api/1.0/games?id=${gameId}`
-            );
-            const gameData = await dealsResponse.json();
+          if (data[game.appid]?.success && data[game.appid]?.data) {
+            const gameData = data[game.appid].data;
             
-            if (gameData.deals && gameData.deals.length > 0) {
-              const bestDeal = gameData.deals.reduce((prev: any, current: any) => 
-                parseFloat(current.price) < parseFloat(prev.price) ? current : prev
-              );
+            // Verifica se o jogo tem preço (alguns podem ser gratuitos ou não disponíveis)
+            if (gameData.price_overview) {
+              const priceData = gameData.price_overview;
               
               allGames.push({
-                gameID: gameId,
-                dealID: bestDeal.dealID,
-                title: gameData.info.title,
-                thumb: gameData.info.thumb,
-                salePrice: bestDeal.price,
-                normalPrice: bestDeal.retailPrice,
-                savings: bestDeal.savings || "0",
-                storeID: bestDeal.storeID,
-                cheapestPrice: gameData.cheapestPriceEver?.price || bestDeal.price,
+                appid: game.appid,
+                title: gameData.name,
+                header_image: gameData.header_image,
+                current_price: priceData.final / 100, // Steam retorna em centavos
+                original_price: priceData.initial / 100,
+                discount_percent: priceData.discount_percent,
+                price_formatted: priceData.final_formatted,
                 genre: game.genre,
               });
             }
           }
         } catch (err) {
-          console.log(`Error fetching ${game.name}:`, err);
+          console.log(`Error fetching game ${game.appid}:`, err);
         }
       }
       
@@ -222,16 +189,16 @@ const Feed = () => {
           <div className="space-y-3">
             {filteredGames.map((game) => (
               <div
-                key={game.dealID}
-                onClick={() => navigate(`/game/${game.gameID}`)}
+                key={game.appid}
+                onClick={() => navigate(`/game/${game.appid}`)}
                 className="bg-card border-2 border-foreground rounded-xl p-3 flex gap-3 hover:shadow-md transition-all hover:scale-[1.01] animate-in fade-in duration-300 cursor-pointer"
               >
                 {/* Game Image */}
                 <div className="flex-shrink-0">
                   <img
-                    src={game.thumb}
+                    src={game.header_image}
                     alt={game.title}
-                    className="w-20 h-20 object-cover rounded-lg shadow-sm"
+                    className="w-32 h-20 object-cover rounded-lg shadow-sm"
                   />
                 </div>
 
@@ -246,34 +213,42 @@ const Feed = () => {
                   </p>
                   
                   <div className="space-y-0.5 text-xs">
-                    <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground">Base:</span>
-                      <span className="line-through text-muted-foreground">
-                        R$ {convertToBRL(game.normalPrice)}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground">Atual:</span>
-                      <span className="text-green-600 font-bold text-base">
-                        R$ {convertToBRL(game.salePrice)}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground">Menor:</span>
-                      <span className="text-primary font-semibold text-xs">
-                        R$ {convertToBRL(game.cheapestPrice)}
-                      </span>
-                    </div>
-                    {parseFloat(game.savings) > 0 && (
-                      <div className="inline-block px-2 py-0.5 bg-green-600 text-white rounded-full text-xs font-semibold mt-1">
-                        -{parseFloat(game.savings).toFixed(0)}%
+                    {game.discount_percent > 0 ? (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground">De:</span>
+                          <span className="line-through text-muted-foreground">
+                            R$ {game.original_price.toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground">Por:</span>
+                          <span className="text-green-600 font-bold text-base">
+                            {game.price_formatted}
+                          </span>
+                          <span className="inline-block px-2 py-0.5 bg-green-600 text-white rounded-full text-xs font-semibold">
+                            -{game.discount_percent}%
+                          </span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">Preço:</span>
+                        <span className="text-foreground font-bold text-base">
+                          {game.price_formatted}
+                        </span>
                       </div>
                     )}
                   </div>
                 </div>
 
                 {/* Favorite Button */}
-                <button className="self-start p-1 hover:scale-110 transition-transform">
+                <button 
+                  className="self-start p-1 hover:scale-110 transition-transform"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                  }}
+                >
                   <Heart className="w-5 h-5 text-foreground hover:fill-current transition-colors" />
                 </button>
               </div>
