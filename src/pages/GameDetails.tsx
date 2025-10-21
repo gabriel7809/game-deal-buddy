@@ -1,51 +1,35 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { ArrowLeft, ExternalLink, TrendingDown } from "lucide-react";
+import { ArrowLeft, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
-interface GameInfo {
-  title: string;
-  steamAppID: string | null;
-  thumb: string;
-}
-
-interface Deal {
-  storeID: string;
-  dealID: string;
+interface StorePrice {
+  store: string;
   price: string;
-  retailPrice: string;
-  savings: string;
-}
-
-interface GameDetails {
-  info: GameInfo;
-  deals: Deal[];
-  cheapestPriceEver: {
-    price: string;
-    date: number;
-  };
-}
-
-interface Store {
-  storeID: string;
-  storeName: string;
-  isActive: number;
-  images: {
-    banner: string;
-    logo: string;
-    icon: string;
-  };
+  originalPrice: string;
+  discount: number;
+  buyUrl: string;
+  available: boolean;
 }
 
 const GameDetails = () => {
   const navigate = useNavigate();
   const { gameId } = useParams<{ gameId: string }>();
   const [game, setGame] = useState<any>(null);
+  const [prices, setPrices] = useState<StorePrice[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingPrices, setLoadingPrices] = useState(true);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -65,6 +49,7 @@ const GameDetails = () => {
 
   useEffect(() => {
     fetchGameDetails();
+    fetchPrices();
   }, [gameId]);
 
   const fetchGameDetails = async () => {
@@ -72,10 +57,11 @@ const GameDetails = () => {
 
     try {
       setLoading(true);
-      const response = await fetch(
-        `https://store.steampowered.com/api/appdetails?appids=${gameId}&cc=br&l=pt`
-      );
-      const data = await response.json();
+      const { data, error } = await supabase.functions.invoke('fetch-steam-games', {
+        body: { appid: gameId }
+      });
+      
+      if (error) throw error;
       
       if (data[gameId]?.success && data[gameId]?.data) {
         setGame(data[gameId].data);
@@ -98,8 +84,25 @@ const GameDetails = () => {
     }
   };
 
-  const getSteamUrl = () => {
-    return `https://store.steampowered.com/app/${gameId}`;
+  const fetchPrices = async () => {
+    if (!gameId) return;
+
+    try {
+      setLoadingPrices(true);
+      const { data, error } = await supabase.functions.invoke('fetch-game-prices', {
+        body: { appid: gameId }
+      });
+      
+      if (error) throw error;
+      
+      if (data?.prices) {
+        setPrices(data.prices);
+      }
+    } catch (error: any) {
+      console.error("Error fetching prices:", error);
+    } finally {
+      setLoadingPrices(false);
+    }
   };
 
   if (loading) {
@@ -136,11 +139,11 @@ const GameDetails = () => {
   return (
     <div className="min-h-screen bg-background">
       {/* Header with Back Button */}
-      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-foreground/10">
-        <div className="container max-w-4xl mx-auto px-4 py-4">
+      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border">
+        <div className="container max-w-6xl mx-auto px-4 py-3">
           <Button
             variant="ghost"
-            onClick={() => navigate("/feed")}
+            onClick={() => navigate(-1)}
             className="gap-2"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -149,117 +152,128 @@ const GameDetails = () => {
         </div>
       </div>
 
-      <div className="container max-w-4xl mx-auto px-4 py-6 space-y-6 pb-20">
-        {/* Game Hero Section */}
-        <div className="relative">
-          <div className="aspect-video w-full overflow-hidden rounded-2xl bg-muted">
-            <img
-              src={game.header_image}
-              alt={game.name}
-              className="w-full h-full object-cover"
-            />
+      <div className="container max-w-6xl mx-auto px-4 py-6 space-y-6 pb-20">
+        {/* Game Image and Info Section */}
+        <div className="grid md:grid-cols-[400px,1fr] gap-6">
+          {/* Game Image */}
+          <div className="relative">
+            <div className="aspect-[460/215] w-full overflow-hidden rounded-xl bg-muted border-2 border-border">
+              <img
+                src={game.header_image}
+                alt={game.name}
+                className="w-full h-full object-cover"
+              />
+            </div>
           </div>
-          
-          <div className="mt-6 space-y-4">
-            <h1 className="text-3xl md:text-4xl font-bold text-foreground">
-              {game.name}
-            </h1>
-            
-            <p className="text-muted-foreground leading-relaxed">
-              {game.short_description}
-            </p>
 
-            {/* Genres */}
-            {game.genres && game.genres.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {game.genres.map((genre: any) => (
-                  <span
-                    key={genre.id}
-                    className="px-3 py-1 bg-primary/10 text-primary rounded-full text-sm font-medium"
-                  >
-                    {genre.description}
-                  </span>
-                ))}
-              </div>
-            )}
+          {/* Game Information */}
+          <div className="space-y-4">
+            <div>
+              <h1 className="text-3xl md:text-4xl font-bold text-foreground mb-2">
+                {game.name}
+              </h1>
+              
+              {/* Genres */}
+              {game.genres && game.genres.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {game.genres.map((genre: any) => (
+                    <span
+                      key={genre.id}
+                      className="px-3 py-1 bg-primary/10 text-primary rounded-full text-sm font-medium"
+                    >
+                      {genre.description}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Description */}
+            <div>
+              <h2 className="text-lg font-semibold text-foreground mb-2">Descrição</h2>
+              <p className="text-muted-foreground leading-relaxed">
+                {game.short_description}
+              </p>
+            </div>
 
             {/* Developers and Publishers */}
-            <div className="space-y-2 text-sm text-muted-foreground">
+            <div className="space-y-2 text-sm">
               {game.developers && game.developers.length > 0 && (
                 <p>
                   <span className="font-semibold text-foreground">Desenvolvedora:</span>{" "}
-                  {game.developers.join(", ")}
+                  <span className="text-muted-foreground">{game.developers.join(", ")}</span>
                 </p>
               )}
               {game.publishers && game.publishers.length > 0 && (
                 <p>
                   <span className="font-semibold text-foreground">Publicadora:</span>{" "}
-                  {game.publishers.join(", ")}
+                  <span className="text-muted-foreground">{game.publishers.join(", ")}</span>
                 </p>
               )}
             </div>
           </div>
         </div>
 
-        {/* Price Section */}
-        <Card className="border-2 border-primary/20">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2">
-              <TrendingDown className="w-5 h-5" />
-              Preço na Steam
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {game.price_overview ? (
-              <div className="space-y-4">
-                <div className="flex items-end justify-between">
-                  <div className="space-y-1">
-                    {game.price_overview.discount_percent > 0 ? (
-                      <>
-                        <div className="flex items-baseline gap-3">
-                          <span className="text-sm text-muted-foreground line-through">
-                            {game.price_overview.initial_formatted}
-                          </span>
-                          <span className="text-3xl font-bold text-green-600">
-                            {game.price_overview.final_formatted}
-                          </span>
-                        </div>
-                        <span className="inline-block px-3 py-1 bg-green-600 text-white rounded-full text-sm font-semibold">
-                          -{game.price_overview.discount_percent}% OFF
-                        </span>
-                      </>
-                    ) : (
-                      <span className="text-3xl font-bold text-foreground">
-                        {game.price_overview.final_formatted}
-                      </span>
-                    )}
-                  </div>
-                  <Button
-                    size="lg"
-                    onClick={() => window.open(getSteamUrl(), "_blank")}
-                    className="gap-2 font-semibold"
-                  >
-                    Comprar na Steam
-                    <ExternalLink className="w-4 h-4" />
-                  </Button>
-                </div>
+        {/* Price Comparison Table */}
+        <div className="bg-card border-2 border-border rounded-xl overflow-hidden">
+          <div className="bg-primary/10 px-6 py-4 border-b border-border">
+            <h2 className="text-xl font-bold text-foreground">Comparação de Preços</h2>
+            <p className="text-sm text-muted-foreground">Compare os preços em tempo real das principais lojas</p>
+          </div>
+          
+          <div className="overflow-x-auto">
+            {loadingPrices ? (
+              <div className="p-8 text-center">
+                <p className="text-muted-foreground">Carregando preços...</p>
               </div>
             ) : (
-              <div className="flex items-center justify-between">
-                <p className="text-muted-foreground">
-                  {game.is_free ? "Este jogo é gratuito!" : "Preço não disponível"}
-                </p>
-                <Button
-                  onClick={() => window.open(getSteamUrl(), "_blank")}
-                  className="gap-2"
-                >
-                  {game.is_free ? "Baixar Grátis" : "Ver na Steam"}
-                  <ExternalLink className="w-4 h-4" />
-                </Button>
-              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="font-bold">Loja</TableHead>
+                    <TableHead className="font-bold">Preço Original</TableHead>
+                    <TableHead className="font-bold">Preço Atual</TableHead>
+                    <TableHead className="font-bold">Desconto</TableHead>
+                    <TableHead className="font-bold text-right">Ação</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {prices.map((storePrice, index) => (
+                    <TableRow key={index}>
+                      <TableCell className="font-medium">{storePrice.store}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {storePrice.originalPrice}
+                      </TableCell>
+                      <TableCell>
+                        <span className={storePrice.discount > 0 ? "text-green-600 font-semibold" : ""}>
+                          {storePrice.price}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        {storePrice.discount > 0 && (
+                          <span className="inline-block px-2 py-1 bg-green-600 text-white rounded-full text-xs font-semibold">
+                            -{storePrice.discount}%
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          size="sm"
+                          onClick={() => window.open(storePrice.buyUrl, "_blank")}
+                          className="gap-2"
+                          disabled={!storePrice.available && storePrice.price !== "Consultar"}
+                        >
+                          {storePrice.available ? "Comprar" : "Ver Loja"}
+                          <ExternalLink className="w-4 h-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     </div>
   );
