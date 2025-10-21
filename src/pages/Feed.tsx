@@ -67,10 +67,11 @@ const Feed = () => {
       
       for (const game of popularGames) {
         try {
-          const response = await fetch(
-            `https://store.steampowered.com/api/appdetails?appids=${game.appid}&cc=br&l=pt`
-          );
-          const data = await response.json();
+          const { data, error } = await supabase.functions.invoke('fetch-steam-games', {
+            body: { appid: game.appid }
+          });
+          
+          if (error) throw error;
           
           if (data[game.appid]?.success && data[game.appid]?.data) {
             const gameData = data[game.appid].data;
