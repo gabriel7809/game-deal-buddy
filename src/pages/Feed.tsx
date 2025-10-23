@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Search, Menu, Settings, Heart } from "lucide-react";
+import { Search, Menu, Settings, Heart, ChevronDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "@/hooks/use-toast";
 
 interface GameDeal {
@@ -22,7 +23,8 @@ const Feed = () => {
   const [games, setGames] = useState<GameDeal[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  const [sortBy, setSortBy] = useState<"genre" | "discount" | "alphabetic">("discount");
+  const [sortBy, setSortBy] = useState<"discount" | "alphabetic">("discount");
+  const [selectedGenre, setSelectedGenre] = useState<string>("Todos");
 
   useEffect(() => {
     // Check authentication
@@ -143,9 +145,23 @@ const Feed = () => {
     }
   };
 
-  const filteredGames = games.filter(game =>
-    game.title.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Lista de gêneros únicos
+  const genres = ["Todos", ...Array.from(new Set(games.map(game => game.genre)))];
+
+  // Filtra e ordena os jogos
+  const filteredGames = games
+    .filter(game =>
+      game.title.toLowerCase().includes(searchTerm.toLowerCase()) &&
+      (selectedGenre === "Todos" || game.genre === selectedGenre)
+    )
+    .sort((a, b) => {
+      if (sortBy === "discount") {
+        return b.discount_percent - a.discount_percent;
+      } else if (sortBy === "alphabetic") {
+        return a.title.localeCompare(b.title);
+      }
+      return 0;
+    });
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -188,13 +204,34 @@ const Feed = () => {
 
         {/* Filter Buttons */}
         <div className="flex gap-3 justify-center flex-wrap">
-          <Button
-            onClick={() => setSortBy("genre")}
-            variant={sortBy === "genre" ? "default" : "secondary"}
-            className="rounded-full px-6"
-          >
-            Gênero
-          </Button>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="secondary"
+                className="rounded-full px-6"
+              >
+                {selectedGenre}
+                <ChevronDown className="ml-2 h-4 w-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-56 p-2">
+              <div className="space-y-1">
+                {genres.map((genre) => (
+                  <button
+                    key={genre}
+                    onClick={() => setSelectedGenre(genre)}
+                    className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                      selectedGenre === genre
+                        ? "bg-primary text-primary-foreground"
+                        : "hover:bg-accent hover:text-accent-foreground"
+                    }`}
+                  >
+                    {genre}
+                  </button>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
           <Button
             onClick={() => setSortBy("discount")}
             variant={sortBy === "discount" ? "default" : "secondary"}
