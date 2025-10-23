@@ -163,11 +163,6 @@ const Feed = () => {
       return 0;
     });
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    navigate("/auth");
-  };
-
   return (
     <div className="min-h-screen bg-background pb-20">
       {/* Header */}
@@ -188,7 +183,7 @@ const Feed = () => {
               />
             </div>
             
-            <button onClick={handleLogout} className="p-2">
+            <button onClick={() => navigate("/settings")} className="p-2">
               <Settings className="w-6 h-6 text-foreground" />
             </button>
           </div>
