@@ -22,6 +22,18 @@ serve(async (req) => {
 
     const prices = [];
 
+    // Busca taxa de câmbio USD para BRL
+    let usdToBrl = 5.5; // Taxa padrão caso a API falhe
+    try {
+      const exchangeResponse = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+      const exchangeData = await exchangeResponse.json();
+      if (exchangeData?.rates?.BRL) {
+        usdToBrl = exchangeData.rates.BRL;
+      }
+    } catch (error) {
+      console.error('Error fetching exchange rate:', error);
+    }
+
     // Busca preço da Steam
     try {
       const steamResponse = await fetch(`https://store.steampowered.com/api/appdetails?appids=${appid}&cc=br&l=pt`);
@@ -32,7 +44,7 @@ serve(async (req) => {
         prices.push({
           store: 'Steam',
           price: priceData.final_formatted,
-          originalPrice: priceData.initial_formatted,
+          originalPrice: priceData.initial > 0 ? priceData.initial_formatted : priceData.final_formatted,
           discount: priceData.discount_percent,
           buyUrl: `https://store.steampowered.com/app/${appid}`,
           available: true,
@@ -87,18 +99,22 @@ serve(async (req) => {
           for (const deal of storeDeals.slice(0, 4)) { // Limita a 4 lojas adicionais
             const store = storeMap[deal.storeID];
             if (store) {
-              const salePrice = parseFloat(deal.price);
-              const retailPrice = parseFloat(deal.retailPrice);
-              const discount = Math.round(((retailPrice - salePrice) / retailPrice) * 100);
+              const salePriceUSD = parseFloat(deal.price);
+              const retailPriceUSD = parseFloat(deal.retailPrice);
+              const discount = Math.round(((retailPriceUSD - salePriceUSD) / retailPriceUSD) * 100);
+              
+              // Converte de USD para BRL
+              const salePriceBRL = salePriceUSD * usdToBrl;
+              const retailPriceBRL = retailPriceUSD * usdToBrl;
               
               prices.push({
                 store: store.name,
-                price: `R$ ${salePrice.toFixed(2)}`,
-                originalPrice: `R$ ${retailPrice.toFixed(2)}`,
+                price: `R$ ${salePriceBRL.toFixed(2)}`,
+                originalPrice: `R$ ${retailPriceBRL.toFixed(2)}`,
                 discount: discount > 0 ? discount : 0,
                 buyUrl: `https://www.cheapshark.com/redirect?dealID=${deal.dealID}`,
                 available: true,
-                numericPrice: salePrice
+                numericPrice: salePriceBRL
               });
             }
           }
