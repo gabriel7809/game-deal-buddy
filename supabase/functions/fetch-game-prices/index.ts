@@ -70,16 +70,10 @@ serve(async (req) => {
       if (cheapSharkData && cheapSharkData.length > 0) {
         const game = cheapSharkData[0];
         
-        // Mapeia store IDs do CheapShark para nomes conhecidos
+        // Mapeia store IDs do CheapShark para lojas confiáveis
         const storeMap: { [key: string]: { name: string, baseUrl: string } } = {
           '1': { name: 'Steam', baseUrl: 'https://store.steampowered.com/app/' },
-          '2': { name: 'GamersGate', baseUrl: 'https://www.gamersgate.com' },
-          '3': { name: 'GreenManGaming', baseUrl: 'https://www.greenmangaming.com' },
           '7': { name: 'GOG', baseUrl: 'https://www.gog.com' },
-          '8': { name: 'Origin', baseUrl: 'https://www.origin.com' },
-          '11': { name: 'Humble Store', baseUrl: 'https://www.humblebundle.com/store' },
-          '13': { name: 'Uplay', baseUrl: 'https://store.ubi.com' },
-          '15': { name: 'Fanatical', baseUrl: 'https://www.fanatical.com' },
           '25': { name: 'Epic Games', baseUrl: 'https://store.epicgames.com' },
         };
 
@@ -114,12 +108,12 @@ serve(async (req) => {
       console.error('Error fetching CheapShark prices:', error);
     }
 
-    // Se não encontrou outras lojas, adiciona placeholders
+    // Se não encontrou outras lojas, adiciona placeholders para lojas brasileiras confiáveis
     if (prices.length === 1) {
       const placeholderStores = [
         { name: 'Nuuvem', buyUrl: 'https://www.nuuvem.com/br-pt/' },
-        { name: 'Green Man Gaming', buyUrl: 'https://www.greenmangaming.com/' },
-        { name: 'Epic Games', buyUrl: 'https://store.epicgames.com/' },
+        { name: 'Eneba', buyUrl: 'https://www.eneba.com/br/' },
+        { name: 'GOG', buyUrl: 'https://www.gog.com/' },
       ];
       
       for (const store of placeholderStores) {
