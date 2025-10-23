@@ -67,6 +67,7 @@ const Feed = () => {
       
       for (const game of popularGames) {
         try {
+          // Busca detalhes do jogo
           const { data, error } = await supabase.functions.invoke('fetch-steam-games', {
             body: { appid: game.appid }
           });
@@ -79,15 +80,48 @@ const Feed = () => {
             // Verifica se o jogo tem preço (alguns podem ser gratuitos ou não disponíveis)
             if (gameData.price_overview) {
               const priceData = gameData.price_overview;
+              let lowestCurrentPrice = priceData.final / 100;
+              let lowestOriginalPrice = priceData.initial / 100;
+              let bestDiscount = priceData.discount_percent;
+              let bestPriceFormatted = priceData.final_formatted;
+              
+              // Busca preços de múltiplas lojas
+              try {
+                const { data: pricesData, error: pricesError } = await supabase.functions.invoke('fetch-game-prices', {
+                  body: { appid: game.appid }
+                });
+
+                // Se encontrou preços de outras lojas, compara para achar o menor
+                if (!pricesError && pricesData?.prices) {
+                  const availablePrices = pricesData.prices.filter((p: any) => 
+                    p.available && p.numericPrice !== null && p.numericPrice > 0
+                  );
+                  
+                  if (availablePrices.length > 0) {
+                    const cheapest = availablePrices.reduce((min: any, current: any) => 
+                      current.numericPrice < min.numericPrice ? current : min
+                    );
+                    
+                    if (cheapest.numericPrice < lowestCurrentPrice) {
+                      lowestCurrentPrice = cheapest.numericPrice;
+                      lowestOriginalPrice = parseFloat(cheapest.originalPrice.replace('R$ ', ''));
+                      bestDiscount = cheapest.discount;
+                      bestPriceFormatted = cheapest.price;
+                    }
+                  }
+                }
+              } catch (pricesErr) {
+                console.log(`Error fetching prices for ${game.appid}:`, pricesErr);
+              }
               
               allGames.push({
                 appid: game.appid,
                 title: gameData.name,
                 header_image: gameData.header_image,
-                current_price: priceData.final / 100, // Steam retorna em centavos
-                original_price: priceData.initial / 100,
-                discount_percent: priceData.discount_percent,
-                price_formatted: priceData.final_formatted,
+                current_price: lowestCurrentPrice,
+                original_price: lowestOriginalPrice,
+                discount_percent: bestDiscount,
+                price_formatted: bestPriceFormatted,
                 genre: game.genre,
               });
             }
