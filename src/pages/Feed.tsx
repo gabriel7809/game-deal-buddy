@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Search, Menu, Settings, Heart, ChevronDown } from "lucide-react";
+import { Search, Settings, Heart, ChevronDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "@/hooks/use-toast";
+import { NavigationDrawer } from "@/components/NavigationDrawer";
 
 interface GameDeal {
   appid: string;
@@ -169,9 +170,7 @@ const Feed = () => {
       <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-foreground/10">
         <div className="container max-w-4xl mx-auto px-4 py-4">
           <div className="flex items-center gap-3">
-            <button className="p-2">
-              <Menu className="w-6 h-6 text-foreground" />
-            </button>
+            <NavigationDrawer />
             
             <div className="flex-1 relative">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
