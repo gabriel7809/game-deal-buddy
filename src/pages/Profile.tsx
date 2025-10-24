@@ -47,6 +47,16 @@ const Profile = () => {
         if (profile) {
           setUsername(profile.username || "");
         }
+
+        // Load favorites count
+        const { data: favs, error: favsError } = await supabase
+          .from("favorites")
+          .select("id", { count: "exact" })
+          .eq("user_id", user.id);
+
+        if (!favsError && favs) {
+          setFavoritesCount(favs.length);
+        }
       }
     } catch (error: any) {
       console.error("Error loading profile:", error);

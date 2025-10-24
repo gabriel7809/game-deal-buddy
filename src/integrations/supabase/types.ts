@@ -14,6 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      favorites: {
+        Row: {
+          appid: string
+          created_at: string
+          current_price: number
+          discount_percent: number
+          genre: string
+          header_image: string
+          id: string
+          original_price: number
+          price_formatted: string
+          title: string
+          user_id: string
+        }
+        Insert: {
+          appid: string
+          created_at?: string
+          current_price: number
+          discount_percent: number
+          genre: string
+          header_image: string
+          id?: string
+          original_price: number
+          price_formatted: string
+          title: string
+          user_id: string
+        }
+        Update: {
+          appid?: string
+          created_at?: string
+          current_price?: number
+          discount_percent?: number
+          genre?: string
+          header_image?: string
+          id?: string
+          original_price?: number
+          price_formatted?: string
+          title?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string

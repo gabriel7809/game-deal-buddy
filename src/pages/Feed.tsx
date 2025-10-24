@@ -26,6 +26,7 @@ const Feed = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState<"discount" | "alphabetic">("discount");
   const [selectedGenre, setSelectedGenre] = useState<string>("Todos");
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     // Check authentication
@@ -46,7 +47,94 @@ const Feed = () => {
 
   useEffect(() => {
     fetchGames();
+    fetchFavorites();
   }, []);
+
+  const fetchFavorites = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from("favorites")
+        .select("appid")
+        .eq("user_id", user.id);
+
+      if (error) throw error;
+
+      if (data) {
+        setFavorites(new Set(data.map(fav => fav.appid)));
+      }
+    } catch (error: any) {
+      console.error("Error fetching favorites:", error);
+    }
+  };
+
+  const toggleFavorite = async (game: GameDeal, e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        navigate("/auth");
+        return;
+      }
+
+      const isFavorited = favorites.has(game.appid);
+
+      if (isFavorited) {
+        // Remove from favorites
+        const { error } = await supabase
+          .from("favorites")
+          .delete()
+          .eq("user_id", user.id)
+          .eq("appid", game.appid);
+
+        if (error) throw error;
+
+        setFavorites(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(game.appid);
+          return newSet;
+        });
+
+        toast({
+          title: "Removido dos favoritos",
+          description: `${game.title} foi removido dos seus favoritos`,
+        });
+      } else {
+        // Add to favorites
+        const { error } = await supabase
+          .from("favorites")
+          .insert({
+            user_id: user.id,
+            appid: game.appid,
+            title: game.title,
+            header_image: game.header_image,
+            current_price: game.current_price,
+            original_price: game.original_price,
+            discount_percent: game.discount_percent,
+            price_formatted: game.price_formatted,
+            genre: game.genre,
+          });
+
+        if (error) throw error;
+
+        setFavorites(prev => new Set(prev).add(game.appid));
+
+        toast({
+          title: "Adicionado aos favoritos",
+          description: `${game.title} foi adicionado aos seus favoritos`,
+        });
+      }
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error.message || "Não foi possível atualizar favoritos",
+        variant: "destructive",
+      });
+    }
+  };
 
   const fetchGames = async () => {
     try {
@@ -311,11 +399,15 @@ const Feed = () => {
                 {/* Favorite Button */}
                 <button 
                   className="self-start p-1 hover:scale-110 transition-transform"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                  }}
+                  onClick={(e) => toggleFavorite(game, e)}
                 >
-                  <Heart className="w-5 h-5 text-foreground hover:fill-current transition-colors" />
+                  <Heart 
+                    className={`w-5 h-5 transition-colors ${
+                      favorites.has(game.appid) 
+                        ? "fill-red-500 text-red-500" 
+                        : "text-foreground hover:fill-current"
+                    }`} 
+                  />
                 </button>
               </div>
             ))}
