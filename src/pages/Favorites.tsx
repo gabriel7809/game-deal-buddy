@@ -5,7 +5,7 @@ import { Heart } from "lucide-react";
 import { NavigationDrawer } from "@/components/NavigationDrawer";
 import { toast } from "@/hooks/use-toast";
 
-interface Favorite {
+interface FavoriteGame {
   id: string;
   appid: string;
   title: string;
@@ -20,7 +20,7 @@ interface Favorite {
 const Favorites = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
-  const [favorites, setFavorites] = useState<Favorite[]>([]);
+  const [favorites, setFavorites] = useState<FavoriteGame[]>([]);
 
   useEffect(() => {
     checkAuth();
