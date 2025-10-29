@@ -1,9 +1,29 @@
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Gamepad2 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
 const Index = () => {
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const checkAuthAndRedirect = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      const timer = setTimeout(() => {
+        if (session) {
+          navigate("/feed");
+        } else {
+          navigate("/auth");
+        }
+      }, 3000);
+
+      return () => clearTimeout(timer);
+    };
+
+    checkAuthAndRedirect();
+  }, [navigate]);
 
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4">

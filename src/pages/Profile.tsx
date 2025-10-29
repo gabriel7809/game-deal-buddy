@@ -17,6 +17,8 @@ const Profile = () => {
   const [email, setEmail] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [favoritesCount, setFavoritesCount] = useState(0);
+  const [avatarUrl, setAvatarUrl] = useState("");
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     checkAuth();
@@ -40,12 +42,13 @@ const Profile = () => {
         
         const { data: profile } = await supabase
           .from("profiles")
-          .select("username")
+          .select("username, avatar_url")
           .eq("id", user.id)
           .single();
         
         if (profile) {
           setUsername(profile.username || "");
+          setAvatarUrl(profile.avatar_url || "");
         }
 
         // Load favorites count
@@ -93,6 +96,59 @@ const Profile = () => {
     }
   };
 
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    try {
+      setUploading(true);
+      
+      if (!event.target.files || event.target.files.length === 0) {
+        return;
+      }
+
+      const file = event.target.files[0];
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) return;
+
+      const fileExt = file.name.split('.').pop();
+      const filePath = `${user.id}/avatar.${fileExt}`;
+
+      // Upload image to storage
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath);
+
+      // Update profile with avatar URL
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ avatar_url: publicUrl })
+        .eq('id', user.id);
+
+      if (updateError) throw updateError;
+
+      setAvatarUrl(publicUrl);
+      
+      toast({
+        title: "Foto atualizada",
+        description: "Sua foto de perfil foi atualizada com sucesso!",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error.message || "Não foi possível atualizar a foto",
+        variant: "destructive",
+      });
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const getInitials = () => {
     if (username) {
       return username.substring(0, 2).toUpperCase();
@@ -131,14 +187,25 @@ const Profile = () => {
             <div className="flex flex-col items-center gap-4">
               <div className="relative">
                 <Avatar className="w-24 h-24">
-                  <AvatarImage src="" />
+                  <AvatarImage src={avatarUrl} />
                   <AvatarFallback className="text-2xl bg-primary text-primary-foreground">
                     {getInitials()}
                   </AvatarFallback>
                 </Avatar>
-                <button className="absolute bottom-0 right-0 p-2 bg-primary rounded-full hover:bg-primary/90 transition-colors">
+                <label 
+                  htmlFor="avatar-upload" 
+                  className="absolute bottom-0 right-0 p-2 bg-primary rounded-full hover:bg-primary/90 transition-colors cursor-pointer"
+                >
                   <Camera className="w-4 h-4 text-primary-foreground" />
-                </button>
+                </label>
+                <input
+                  id="avatar-upload"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarUpload}
+                  disabled={uploading}
+                  className="hidden"
+                />
               </div>
               <CardTitle>{username || email}</CardTitle>
             </div>
