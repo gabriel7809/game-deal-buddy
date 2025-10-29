@@ -80,87 +80,51 @@ serve(async (req) => {
       });
     }
 
-    // Busca preços via IsThereAnyDeal API (mais confiável e com mais lojas)
+    // Busca preços via CheapShark API (API pública e confiável)
     try {
-      // Primeiro busca o plain do jogo
-      const plainResponse = await fetch(`https://api.isthereanydeal.com/games/lookup/v1?key=67e2b7f4b2b2a91c2f8e7d8b3c4d5e6f&appid=${appid}`);
-      const plainData = await plainResponse.json();
+      console.log(`Fetching CheapShark prices for appid: ${appid}`);
+      const cheapSharkResponse = await fetch(`https://www.cheapshark.com/api/1.0/games?steamAppID=${appid}`);
+      const cheapSharkData = await cheapSharkResponse.json();
       
-      if (plainData?.game?.id) {
-        const gameId = plainData.game.id;
-        
-        // Busca preços atuais
-        const pricesResponse = await fetch(`https://api.isthereanydeal.com/games/prices/v2?key=67e2b7f4b2b2a91c2f8e7d8b3c4d5e6f&id=${gameId}&region=br&country=BR&shops=steam,gog,epic,greenmangaming,humblestore,nuuvem,fanatical`);
-        const pricesData = await pricesResponse.json();
-        
-        if (pricesData?.deals) {
-          const storeNameMap: { [key: string]: string } = {
-            'gog': 'GOG',
-            'epic': 'Epic Games',
-            'greenmangaming': 'Green Man Gaming',
-            'humblestore': 'Humble Store',
-            'nuuvem': 'Nuuvem',
-            'fanatical': 'Fanatical'
-          };
-
-          for (const deal of pricesData.deals) {
-            if (deal.shop.id === 'steam') continue; // Steam já foi adicionado
-            
-            const storeName = storeNameMap[deal.shop.id] || deal.shop.name;
-            const currentPrice = deal.price.amount;
-            const regularPrice = deal.regular.amount;
-            const discount = deal.cut || 0;
-            
-            // Converte de USD para BRL
-            const currentPriceBRL = currentPrice * usdToBrl;
-            const regularPriceBRL = regularPrice * usdToBrl;
-            
-            prices.push({
-              store: storeName,
-              price: `R$ ${currentPriceBRL.toFixed(2)}`,
-              originalPrice: `R$ ${regularPriceBRL.toFixed(2)}`,
-              discount: discount,
-              buyUrl: deal.url,
-              available: true,
-              numericPrice: currentPriceBRL,
-              numericOriginalPrice: regularPriceBRL
-            });
-          }
-        }
-      }
-    } catch (error) {
-      console.log('ITAD API not available, falling back to CheapShark:', error);
+      console.log(`CheapShark response:`, JSON.stringify(cheapSharkData).substring(0, 200));
       
-      // Fallback: Busca via CheapShark
-      try {
-        const cheapSharkResponse = await fetch(`https://www.cheapshark.com/api/1.0/games?steamAppID=${appid}`);
-        const cheapSharkData = await cheapSharkResponse.json();
+      if (cheapSharkData && cheapSharkData.length > 0) {
+        const game = cheapSharkData[0];
+        console.log(`Found game on CheapShark: ${game.external}`);
         
-        if (cheapSharkData && cheapSharkData.length > 0) {
-          const game = cheapSharkData[0];
-          
-          const storeMap: { [key: string]: { name: string } } = {
-            '7': { name: 'GOG' },
-            '25': { name: 'Epic Games' },
-            '3': { name: 'Green Man Gaming' },
-            '11': { name: 'Humble Store' },
-          };
+        const storeMap: { [key: string]: { name: string, baseUrl: string } } = {
+          '7': { name: 'GOG', baseUrl: 'https://www.gog.com' },
+          '25': { name: 'Epic Games', baseUrl: 'https://store.epicgames.com' },
+          '3': { name: 'Green Man Gaming', baseUrl: 'https://www.greenmangaming.com' },
+          '11': { name: 'Humble Store', baseUrl: 'https://www.humblebundle.com/store' },
+          '15': { name: 'Fanatical', baseUrl: 'https://www.fanatical.com' },
+          '8': { name: 'Nuuvem', baseUrl: 'https://www.nuuvem.com' },
+        };
 
-          const dealsResponse = await fetch(`https://www.cheapshark.com/api/1.0/games?id=${game.gameID}`);
-          const dealsData = await dealsResponse.json();
+        // Busca os deals específicos deste jogo
+        const dealsResponse = await fetch(`https://www.cheapshark.com/api/1.0/games?id=${game.gameID}`);
+        const dealsData = await dealsResponse.json();
+        
+        console.log(`Deals found:`, dealsData?.deals?.length || 0);
+        
+        if (dealsData?.deals) {
+          // Filtra deals que não são da Steam e pega os melhores preços
+          const storeDeals = dealsData.deals.filter((deal: any) => deal.storeID !== '1');
           
-          if (dealsData?.deals) {
-            const storeDeals = dealsData.deals.filter((deal: any) => deal.storeID !== '1');
-            
-            for (const deal of storeDeals.slice(0, 5)) {
-              const store = storeMap[deal.storeID];
-              if (store) {
-                const salePriceUSD = parseFloat(deal.price);
-                const retailPriceUSD = parseFloat(deal.retailPrice);
+          for (const deal of storeDeals) {
+            const store = storeMap[deal.storeID];
+            if (store) {
+              const salePriceUSD = parseFloat(deal.price);
+              const retailPriceUSD = parseFloat(deal.retailPrice);
+              
+              // Só adiciona se tiver preço válido
+              if (salePriceUSD > 0 && retailPriceUSD > 0) {
                 const discount = Math.round(((retailPriceUSD - salePriceUSD) / retailPriceUSD) * 100);
                 
                 const salePriceBRL = salePriceUSD * usdToBrl;
                 const retailPriceBRL = retailPriceUSD * usdToBrl;
+                
+                console.log(`Adding ${store.name}: R$ ${salePriceBRL.toFixed(2)} (${discount}% off)`);
                 
                 prices.push({
                   store: store.name,
@@ -176,68 +140,12 @@ serve(async (req) => {
             }
           }
         }
-      } catch (cheapSharkError) {
-        console.error('Error fetching CheapShark prices:', cheapSharkError);
       }
+    } catch (error) {
+      console.error('Error fetching CheapShark prices:', error);
     }
 
-    // Busca preços adicionais via APIs específicas das lojas
-    
-    // GOG API (se ainda não tiver)
-    if (!prices.some(p => p.store === 'GOG')) {
-      try {
-        const gogSearchResponse = await fetch(`https://embed.gog.com/games/ajax/filtered?mediaType=game&search=${appid}`);
-        const gogSearchData = await gogSearchResponse.json();
-        
-        if (gogSearchData?.products && gogSearchData.products.length > 0) {
-          const gogGame = gogSearchData.products[0];
-          const price = gogGame.price?.amount || 0;
-          const basePrice = gogGame.price?.baseAmount || price;
-          const discount = gogGame.price?.discountPercentage || 0;
-          
-          if (price > 0) {
-            const priceBRL = price * usdToBrl;
-            const basePriceBRL = basePrice * usdToBrl;
-            
-            prices.push({
-              store: 'GOG',
-              price: `R$ ${priceBRL.toFixed(2)}`,
-              originalPrice: `R$ ${basePriceBRL.toFixed(2)}`,
-              discount: discount,
-              buyUrl: `https://www.gog.com${gogGame.url}`,
-              available: true,
-              numericPrice: priceBRL,
-              numericOriginalPrice: basePriceBRL
-            });
-          }
-        }
-      } catch (error) {
-        console.log('GOG API not available:', error);
-      }
-    }
-    
-    // Se não encontrou outras lojas, adiciona placeholders
-    if (prices.length === 1) {
-      const placeholderStores = [
-        { name: 'Nuuvem', buyUrl: 'https://www.nuuvem.com/br-pt/' },
-        { name: 'Green Man Gaming', buyUrl: 'https://www.greenmangaming.com/' },
-        { name: 'GOG', buyUrl: 'https://www.gog.com/' },
-        { name: 'Epic Games', buyUrl: 'https://store.epicgames.com/' },
-      ];
-      
-      for (const store of placeholderStores) {
-        prices.push({
-          store: store.name,
-          price: 'Consultar Site',
-          originalPrice: '-',
-          discount: 0,
-          buyUrl: store.buyUrl,
-          available: false,
-          numericPrice: null,
-          numericOriginalPrice: null
-        });
-      }
-    }
+    console.log(`Total prices found: ${prices.length}`);
 
     return new Response(
       JSON.stringify({ prices }),
