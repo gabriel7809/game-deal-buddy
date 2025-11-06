@@ -81,6 +81,7 @@ serve(async (req) => {
     }
 
     // Busca preços via CheapShark API (API pública e confiável)
+    let nuuvemFoundInCheapShark = false;
     try {
       console.log(`Fetching CheapShark prices for appid: ${appid}`);
       const cheapSharkResponse = await fetch(`https://www.cheapshark.com/api/1.0/games?steamAppID=${appid}`);
@@ -136,6 +137,11 @@ serve(async (req) => {
                   numericPrice: salePriceBRL,
                   numericOriginalPrice: retailPriceBRL
                 });
+                
+                // Marca se encontrou Nuuvem
+                if (store.name === 'Nuuvem') {
+                  nuuvemFoundInCheapShark = true;
+                }
               }
             }
           }
@@ -143,6 +149,59 @@ serve(async (req) => {
       }
     } catch (error) {
       console.error('Error fetching CheapShark prices:', error);
+    }
+
+    // Busca direta na Nuuvem se não foi encontrado via CheapShark
+    if (!nuuvemFoundInCheapShark) {
+      try {
+        console.log('Attempting direct Nuuvem fetch...');
+        
+        // Busca na API interna da Nuuvem (usado pelo site deles)
+        const nuuvemSearchUrl = `https://www.nuuvem.com/api-v2/products/search?q=${appid}&sort=relevance`;
+        const nuuvemResponse = await fetch(nuuvemSearchUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'application/json',
+          }
+        });
+        
+        if (nuuvemResponse.ok) {
+          const nuuvemData = await nuuvemResponse.json();
+          
+          // Procura pelo jogo com o appid correspondente
+          if (nuuvemData?.products && nuuvemData.products.length > 0) {
+            for (const product of nuuvemData.products) {
+              // Verifica se o produto tem o Steam App ID no slug ou metadata
+              if (product.slug?.includes(appid) || product.platforms?.includes('steam')) {
+                const currentPrice = product.price?.brl || product.price?.amount;
+                const originalPrice = product.price?.full_brl || product.price?.original_amount || currentPrice;
+                
+                if (currentPrice) {
+                  const discount = originalPrice && originalPrice > currentPrice 
+                    ? Math.round(((originalPrice - currentPrice) / originalPrice) * 100) 
+                    : 0;
+                  
+                  console.log(`Found on Nuuvem: ${product.name} - R$ ${currentPrice}`);
+                  
+                  prices.push({
+                    store: 'Nuuvem',
+                    price: `R$ ${currentPrice.toFixed(2)}`,
+                    originalPrice: `R$ ${originalPrice.toFixed(2)}`,
+                    discount: discount,
+                    buyUrl: `https://www.nuuvem.com/br-pt/item/${product.slug}`,
+                    available: true,
+                    numericPrice: currentPrice,
+                    numericOriginalPrice: originalPrice
+                  });
+                  break;
+                }
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching direct Nuuvem price:', error);
+      }
     }
 
     console.log(`Total prices found: ${prices.length}`);
