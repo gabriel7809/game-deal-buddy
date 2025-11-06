@@ -6,6 +6,32 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { User, ArrowLeft } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { z } from "zod";
+
+const loginSchema = z.object({
+  email: z.string().email("Email inválido").max(255, "Email deve ter no máximo 255 caracteres"),
+  password: z.string().min(1, "Senha é obrigatória"),
+});
+
+const signupSchema = z.object({
+  email: z.string().email("Email inválido").max(255, "Email deve ter no máximo 255 caracteres"),
+  password: z
+    .string()
+    .min(8, "Senha deve ter no mínimo 8 caracteres")
+    .max(72, "Senha deve ter no máximo 72 caracteres")
+    .regex(
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
+      "Senha deve conter pelo menos uma letra maiúscula, uma minúscula e um número"
+    ),
+  username: z
+    .string()
+    .min(3, "Nome de usuário deve ter no mínimo 3 caracteres")
+    .max(30, "Nome de usuário deve ter no máximo 30 caracteres")
+    .regex(
+      /^[a-zA-Z0-9_]+$/,
+      "Nome de usuário pode conter apenas letras, números e sublinhados"
+    ),
+});
 
 const Auth = () => {
   const navigate = useNavigate();
@@ -40,6 +66,19 @@ const Auth = () => {
 
     try {
       if (isLogin) {
+        // Validate login inputs
+        const validationResult = loginSchema.safeParse({ email, password });
+        if (!validationResult.success) {
+          const firstError = validationResult.error.errors[0];
+          toast({
+            title: "Erro de validação",
+            description: firstError.message,
+            variant: "destructive",
+          });
+          setLoading(false);
+          return;
+        }
+
         // Login
         const { data, error } = await supabase.auth.signInWithPassword({
           email,
@@ -53,7 +92,7 @@ const Auth = () => {
           description: "Bem-vindo de volta!",
         });
       } else {
-        // Signup
+        // Signup - validate password match first
         if (password !== confirmPassword) {
           toast({
             title: "Erro",
@@ -68,6 +107,19 @@ const Auth = () => {
           toast({
             title: "Erro",
             description: "Você precisa aceitar os termos e condições",
+            variant: "destructive",
+          });
+          setLoading(false);
+          return;
+        }
+
+        // Validate signup inputs
+        const validationResult = signupSchema.safeParse({ email, password, username });
+        if (!validationResult.success) {
+          const firstError = validationResult.error.errors[0];
+          toast({
+            title: "Erro de validação",
+            description: firstError.message,
             variant: "destructive",
           });
           setLoading(false);
@@ -93,9 +145,14 @@ const Auth = () => {
         });
       }
     } catch (error: any) {
+      // Generic error message to prevent account enumeration
+      const errorMessage = error.message?.includes("Invalid login credentials")
+        ? "Email ou senha incorretos"
+        : "Ocorreu um erro. Tente novamente.";
+      
       toast({
         title: "Erro",
-        description: error.message || "Ocorreu um erro. Tente novamente.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
