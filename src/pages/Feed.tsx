@@ -140,89 +140,89 @@ const Feed = () => {
     try {
       setLoading(true);
       
-      // Lista de jogos populares com seus Steam App IDs
+      // Lista de jogos populares com seus Steam App IDs (reduzido para melhor performance inicial)
       const popularGames = [
-        { appid: "271590", genre: "Ação/Aventura" }, // Grand Theft Auto V
         { appid: "1174180", genre: "Ação/Aventura" }, // Red Dead Redemption 2
-        { appid: "1938090", genre: "FPS" }, // Call of Duty: Black Ops 6
         { appid: "2050650", genre: "Terror/Sobrevivência" }, // Resident Evil 4
         { appid: "570940", genre: "RPG/Ação" }, // Dark Souls Remastered
         { appid: "1091500", genre: "RPG/Ação" }, // Cyberpunk 2077
         { appid: "292030", genre: "RPG/Aventura" }, // The Witcher 3
-        { appid: "1151340", genre: "RPG/Aventura" }, // Fallout 4
-        { appid: "306130", genre: "MMORPG" }, // The Elder Scrolls Online
-        { appid: "2215430", genre: "Ação/Aventura" }, // Assassin's Creed Mirage
+        { appid: "271590", genre: "Ação/Aventura" }, // Grand Theft Auto V
       ];
 
-      const allGames: GameDeal[] = [];
-      
-      for (const game of popularGames) {
+      // Busca todos os jogos em paralelo
+      const gamePromises = popularGames.map(async (game) => {
         try {
-          // Busca detalhes do jogo
-          const { data, error } = await supabase.functions.invoke('fetch-steam-games', {
-            body: { appid: game.appid }
-          });
+          // Busca dados do jogo e preços em paralelo
+          const [gameResponse, pricesResponse] = await Promise.all([
+            supabase.functions.invoke('fetch-steam-games', {
+              body: { appid: game.appid }
+            }),
+            supabase.functions.invoke('fetch-game-prices', {
+              body: { appid: game.appid }
+            }).catch(() => ({ data: null, error: null })) // Não falha se preços não carregarem
+          ]);
           
-          if (error) throw error;
+          if (gameResponse.error || !gameResponse.data[game.appid]?.success) {
+            return null;
+          }
           
-          if (data[game.appid]?.success && data[game.appid]?.data) {
-            const gameData = data[game.appid].data;
-            
-            // Verifica se o jogo tem preço (alguns podem ser gratuitos ou não disponíveis)
-            if (gameData.price_overview) {
-              const priceData = gameData.price_overview;
-              let lowestCurrentPrice = priceData.final / 100;
-              let lowestOriginalPrice = priceData.initial / 100;
-              let bestDiscount = priceData.discount_percent;
-              let bestPriceFormatted = priceData.final_formatted;
-              
-              // Busca preços de múltiplas lojas
-              try {
-                const { data: pricesData, error: pricesError } = await supabase.functions.invoke('fetch-game-prices', {
-                  body: { appid: game.appid }
-                });
+          const gameData = gameResponse.data[game.appid].data;
+          
+          // Verifica se o jogo tem preço
+          if (!gameData.price_overview) {
+            return null;
+          }
 
-                // Se encontrou preços de outras lojas, compara para achar o menor
-                if (!pricesError && pricesData?.prices) {
-                  const availablePrices = pricesData.prices.filter((p: any) => 
-                    p.available && p.numericPrice !== null && p.numericPrice > 0
-                  );
-                  
-                  if (availablePrices.length > 0) {
-                    const cheapest = availablePrices.reduce((min: any, current: any) => 
-                      current.numericPrice < min.numericPrice ? current : min
-                    );
-                    
-                    if (cheapest.numericPrice < lowestCurrentPrice) {
-                      lowestCurrentPrice = cheapest.numericPrice;
-                      lowestOriginalPrice = parseFloat(cheapest.originalPrice.replace('R$ ', ''));
-                      bestDiscount = cheapest.discount;
-                      bestPriceFormatted = cheapest.price;
-                    }
-                  }
-                }
-              } catch (pricesErr) {
-                console.log(`Error fetching prices for ${game.appid}:`, pricesErr);
-              }
+          const priceData = gameData.price_overview;
+          let lowestCurrentPrice = priceData.final / 100;
+          let lowestOriginalPrice = priceData.initial / 100 || lowestCurrentPrice;
+          let bestDiscount = priceData.discount_percent;
+          let bestPriceFormatted = priceData.final_formatted;
+          
+          // Se encontrou preços de outras lojas, compara para achar o menor
+          if (pricesResponse.data?.prices) {
+            const availablePrices = pricesResponse.data.prices.filter((p: any) => 
+              p.available && p.numericPrice !== null && p.numericPrice > 0
+            );
+            
+            if (availablePrices.length > 0) {
+              const cheapest = availablePrices.reduce((min: any, current: any) => 
+                current.numericPrice < min.numericPrice ? current : min
+              );
               
-              allGames.push({
-                appid: game.appid,
-                title: gameData.name,
-                header_image: gameData.header_image,
-                current_price: lowestCurrentPrice,
-                original_price: lowestOriginalPrice,
-                discount_percent: bestDiscount,
-                price_formatted: bestPriceFormatted,
-                genre: game.genre,
-              });
+              if (cheapest.numericPrice < lowestCurrentPrice) {
+                lowestCurrentPrice = cheapest.numericPrice;
+                lowestOriginalPrice = parseFloat(cheapest.originalPrice.replace('R$ ', '').replace(',', '.')) || lowestCurrentPrice;
+                bestDiscount = cheapest.discount;
+                bestPriceFormatted = cheapest.price;
+              }
             }
           }
+          
+          return {
+            appid: game.appid,
+            title: gameData.name,
+            header_image: gameData.header_image,
+            current_price: lowestCurrentPrice,
+            original_price: lowestOriginalPrice,
+            discount_percent: bestDiscount,
+            price_formatted: bestPriceFormatted,
+            genre: game.genre,
+          };
         } catch (err) {
           console.log(`Error fetching game ${game.appid}:`, err);
+          return null;
         }
-      }
+      });
+
+      // Aguarda todos os jogos carregarem em paralelo
+      const results = await Promise.all(gamePromises);
       
-      setGames(allGames);
+      // Filtra jogos que carregaram com sucesso
+      const validGames = results.filter((game): game is GameDeal => game !== null);
+      
+      setGames(validGames);
     } catch (error: any) {
       toast({
         title: "Erro",
@@ -332,8 +332,21 @@ const Feed = () => {
 
         {/* Games List */}
         {loading ? (
-          <div className="text-center py-12">
-            <p className="text-lg text-muted-foreground">Carregando jogos...</p>
+          <div className="space-y-3">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div
+                key={i}
+                className="bg-card border-2 border-foreground rounded-xl p-3 flex gap-3 animate-pulse"
+              >
+                <div className="flex-shrink-0 w-32 h-20 bg-muted rounded-lg" />
+                <div className="flex-1 space-y-2">
+                  <div className="h-4 bg-muted rounded w-3/4" />
+                  <div className="h-3 bg-muted rounded w-1/2" />
+                  <div className="h-3 bg-muted rounded w-2/3" />
+                </div>
+                <div className="w-5 h-5 bg-muted rounded-full" />
+              </div>
+            ))}
           </div>
         ) : filteredGames.length === 0 ? (
           <div className="text-center py-12">
