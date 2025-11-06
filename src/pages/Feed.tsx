@@ -140,7 +140,7 @@ const Feed = () => {
     try {
       setLoading(true);
       
-      // Lista de jogos populares com seus Steam App IDs (reduzido para melhor performance inicial)
+      // Lista expandida de jogos populares com seus Steam App IDs
       const popularGames = [
         { appid: "1174180", genre: "Ação/Aventura" }, // Red Dead Redemption 2
         { appid: "2050650", genre: "Terror/Sobrevivência" }, // Resident Evil 4
@@ -148,6 +148,14 @@ const Feed = () => {
         { appid: "1091500", genre: "RPG/Ação" }, // Cyberpunk 2077
         { appid: "292030", genre: "RPG/Aventura" }, // The Witcher 3
         { appid: "271590", genre: "Ação/Aventura" }, // Grand Theft Auto V
+        { appid: "1938090", genre: "FPS" }, // Call of Duty: Black Ops 6
+        { appid: "1151340", genre: "RPG/Aventura" }, // Fallout 4
+        { appid: "306130", genre: "MMORPG" }, // The Elder Scrolls Online
+        { appid: "2215430", genre: "Ação/Aventura" }, // Assassin's Creed Mirage
+        { appid: "976730", genre: "Simulação/Esportes" }, // Halo: The Master Chief Collection
+        { appid: "1449560", genre: "FPS" }, // Battlefield 2042
+        { appid: "1172380", genre: "Ação/Aventura" }, // Star Wars Jedi: Fallen Order
+        { appid: "1245620", genre: "Ação/Aventura" }, // Elden Ring
       ];
 
       // Busca todos os jogos em paralelo
@@ -333,7 +341,7 @@ const Feed = () => {
         {/* Games List */}
         {loading ? (
           <div className="space-y-3">
-            {[1, 2, 3, 4, 5, 6].map((i) => (
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].map((i) => (
               <div
                 key={i}
                 className="bg-card border-2 border-foreground rounded-xl p-3 flex gap-3 animate-pulse"

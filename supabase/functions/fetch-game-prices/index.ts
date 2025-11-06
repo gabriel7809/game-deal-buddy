@@ -81,7 +81,9 @@ serve(async (req) => {
     }
 
     // Busca preços via CheapShark API (API pública e confiável)
+    const pricesByStore = new Map(); // Evita duplicatas por loja
     let nuuvemFoundInCheapShark = false;
+    
     try {
       console.log(`Fetching CheapShark prices for appid: ${appid}`);
       const cheapSharkResponse = await fetch(`https://www.cheapshark.com/api/1.0/games?steamAppID=${appid}`);
@@ -109,9 +111,10 @@ serve(async (req) => {
         console.log(`Deals found:`, dealsData?.deals?.length || 0);
         
         if (dealsData?.deals) {
-          // Filtra deals que não são da Steam e pega os melhores preços
+          // Filtra deals que não são da Steam
           const storeDeals = dealsData.deals.filter((deal: any) => deal.storeID !== '1');
           
+          // Agrupa por loja e pega o melhor preço de cada uma
           for (const deal of storeDeals) {
             const store = storeMap[deal.storeID];
             if (store) {
@@ -120,27 +123,31 @@ serve(async (req) => {
               
               // Só adiciona se tiver preço válido
               if (salePriceUSD > 0 && retailPriceUSD > 0) {
-                const discount = Math.round(((retailPriceUSD - salePriceUSD) / retailPriceUSD) * 100);
-                
+                // Verifica se já existe essa loja e se o preço atual é melhor
+                const existingPrice = pricesByStore.get(store.name);
                 const salePriceBRL = salePriceUSD * usdToBrl;
-                const retailPriceBRL = retailPriceUSD * usdToBrl;
                 
-                console.log(`Adding ${store.name}: R$ ${salePriceBRL.toFixed(2)} (${discount}% off)`);
-                
-                prices.push({
-                  store: store.name,
-                  price: `R$ ${salePriceBRL.toFixed(2)}`,
-                  originalPrice: `R$ ${retailPriceBRL.toFixed(2)}`,
-                  discount: discount > 0 ? discount : 0,
-                  buyUrl: `https://www.cheapshark.com/redirect?dealID=${deal.dealID}`,
-                  available: true,
-                  numericPrice: salePriceBRL,
-                  numericOriginalPrice: retailPriceBRL
-                });
-                
-                // Marca se encontrou Nuuvem
-                if (store.name === 'Nuuvem') {
-                  nuuvemFoundInCheapShark = true;
+                if (!existingPrice || salePriceBRL < existingPrice.numericPrice) {
+                  const discount = Math.round(((retailPriceUSD - salePriceUSD) / retailPriceUSD) * 100);
+                  const retailPriceBRL = retailPriceUSD * usdToBrl;
+                  
+                  console.log(`Best deal for ${store.name}: R$ ${salePriceBRL.toFixed(2)} (${discount}% off)`);
+                  
+                  pricesByStore.set(store.name, {
+                    store: store.name,
+                    price: `R$ ${salePriceBRL.toFixed(2)}`,
+                    originalPrice: `R$ ${retailPriceBRL.toFixed(2)}`,
+                    discount: discount > 0 ? discount : 0,
+                    buyUrl: `https://www.cheapshark.com/redirect?dealID=${deal.dealID}`,
+                    available: true,
+                    numericPrice: salePriceBRL,
+                    numericOriginalPrice: retailPriceBRL
+                  });
+                  
+                  // Marca se encontrou Nuuvem
+                  if (store.name === 'Nuuvem') {
+                    nuuvemFoundInCheapShark = true;
+                  }
                 }
               }
             }
@@ -150,6 +157,9 @@ serve(async (req) => {
     } catch (error) {
       console.error('Error fetching CheapShark prices:', error);
     }
+
+    // Adiciona os preços agrupados por loja
+    pricesByStore.forEach(price => prices.push(price));
 
     // Busca direta na Nuuvem se não foi encontrado via CheapShark
     if (!nuuvemFoundInCheapShark) {
