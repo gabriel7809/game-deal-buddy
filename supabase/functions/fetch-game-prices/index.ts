@@ -80,138 +80,109 @@ serve(async (req) => {
       });
     }
 
-    // Busca preços via CheapShark API (API pública e confiável)
-    const pricesByStore = new Map(); // Evita duplicatas por loja
+    // Marca se encontrou Nuuvem via CheapShark
     let nuuvemFoundInCheapShark = false;
-    
-    try {
-      console.log(`Fetching CheapShark prices for appid: ${appid}`);
-      const cheapSharkResponse = await fetch(`https://www.cheapshark.com/api/1.0/games?steamAppID=${appid}`);
-      const cheapSharkData = await cheapSharkResponse.json();
-      
-      console.log(`CheapShark response:`, JSON.stringify(cheapSharkData).substring(0, 200));
-      
-      if (cheapSharkData && cheapSharkData.length > 0) {
-        const game = cheapSharkData[0];
-        console.log(`Found game on CheapShark: ${game.external}`);
-        
-        const storeMap: { [key: string]: { name: string, baseUrl: string } } = {
-          '7': { name: 'GOG', baseUrl: 'https://www.gog.com' },
-          '25': { name: 'Epic Games', baseUrl: 'https://store.epicgames.com' },
-          '3': { name: 'Green Man Gaming', baseUrl: 'https://www.greenmangaming.com' },
-          '11': { name: 'Humble Store', baseUrl: 'https://www.humblebundle.com/store' },
-          '15': { name: 'Fanatical', baseUrl: 'https://www.fanatical.com' },
-          '8': { name: 'Nuuvem', baseUrl: 'https://www.nuuvem.com' },
-        };
 
-        // Busca os deals específicos deste jogo
-        const dealsResponse = await fetch(`https://www.cheapshark.com/api/1.0/games?id=${game.gameID}`);
-        const dealsData = await dealsResponse.json();
+    // Busca direta na Nuuvem
+    try {
+      console.log('Fetching direct Nuuvem prices...');
+      
+      // Busca na API interna da Nuuvem (usado pelo site deles)
+      const nuuvemSearchUrl = `https://www.nuuvem.com/api-v2/products/search?q=${appid}&sort=relevance`;
+      const nuuvemResponse = await fetch(nuuvemSearchUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'application/json',
+        }
+      });
+      
+      if (nuuvemResponse.ok) {
+        const nuuvemData = await nuuvemResponse.json();
         
-        console.log(`Deals found:`, dealsData?.deals?.length || 0);
-        
-        if (dealsData?.deals) {
-          // Filtra deals que não são da Steam
-          const storeDeals = dealsData.deals.filter((deal: any) => deal.storeID !== '1');
-          
-          // Agrupa por loja e pega o melhor preço de cada uma
-          for (const deal of storeDeals) {
-            const store = storeMap[deal.storeID];
-            if (store) {
-              const salePriceUSD = parseFloat(deal.price);
-              const retailPriceUSD = parseFloat(deal.retailPrice);
+        // Procura pelo jogo com o appid correspondente
+        if (nuuvemData?.products && nuuvemData.products.length > 0) {
+          for (const product of nuuvemData.products) {
+            // Verifica se o produto tem o Steam App ID no slug ou metadata
+            if (product.slug?.includes(appid) || product.platforms?.includes('steam')) {
+              const currentPrice = product.price?.brl || product.price?.amount;
+              const originalPrice = product.price?.full_brl || product.price?.original_amount || currentPrice;
               
-              // Só adiciona se tiver preço válido
-              if (salePriceUSD > 0 && retailPriceUSD > 0) {
-                // Verifica se já existe essa loja e se o preço atual é melhor
-                const existingPrice = pricesByStore.get(store.name);
-                const salePriceBRL = salePriceUSD * usdToBrl;
+              if (currentPrice) {
+                const discount = originalPrice && originalPrice > currentPrice 
+                  ? Math.round(((originalPrice - currentPrice) / originalPrice) * 100) 
+                  : 0;
                 
-                if (!existingPrice || salePriceBRL < existingPrice.numericPrice) {
-                  const discount = Math.round(((retailPriceUSD - salePriceUSD) / retailPriceUSD) * 100);
-                  const retailPriceBRL = retailPriceUSD * usdToBrl;
-                  
-                  console.log(`Best deal for ${store.name}: R$ ${salePriceBRL.toFixed(2)} (${discount}% off)`);
-                  
-                  pricesByStore.set(store.name, {
-                    store: store.name,
-                    price: `R$ ${salePriceBRL.toFixed(2)}`,
-                    originalPrice: `R$ ${retailPriceBRL.toFixed(2)}`,
-                    discount: discount > 0 ? discount : 0,
-                    buyUrl: `https://www.cheapshark.com/redirect?dealID=${deal.dealID}`,
-                    available: true,
-                    numericPrice: salePriceBRL,
-                    numericOriginalPrice: retailPriceBRL
-                  });
-                  
-                  // Marca se encontrou Nuuvem
-                  if (store.name === 'Nuuvem') {
-                    nuuvemFoundInCheapShark = true;
-                  }
-                }
+                console.log(`Found on Nuuvem: ${product.name} - R$ ${currentPrice}`);
+                
+                prices.push({
+                  store: 'Nuuvem',
+                  price: `R$ ${currentPrice.toFixed(2)}`,
+                  originalPrice: `R$ ${originalPrice.toFixed(2)}`,
+                  discount: discount,
+                  buyUrl: `https://www.nuuvem.com/br-pt/item/${product.slug}`,
+                  available: true,
+                  numericPrice: currentPrice,
+                  numericOriginalPrice: originalPrice
+                });
+                break;
               }
             }
           }
         }
       }
     } catch (error) {
-      console.error('Error fetching CheapShark prices:', error);
+      console.error('Error fetching direct Nuuvem price:', error);
     }
 
-    // Adiciona os preços agrupados por loja
-    pricesByStore.forEach(price => prices.push(price));
-
-    // Busca direta na Nuuvem se não foi encontrado via CheapShark
-    if (!nuuvemFoundInCheapShark) {
-      try {
-        console.log('Attempting direct Nuuvem fetch...');
+    // Busca direta na ENEBA
+    try {
+      console.log('Fetching ENEBA prices...');
+      
+      // Busca o jogo no Steam primeiro para pegar o nome
+      const steamResponse = await fetch(`https://store.steampowered.com/api/appdetails?appids=${appid}&cc=br&l=pt`);
+      const steamData = await steamResponse.json();
+      
+      if (steamData[appid]?.success && steamData[appid]?.data?.name) {
+        const gameName = steamData[appid].data.name;
+        const searchQuery = encodeURIComponent(gameName + ' steam');
         
-        // Busca na API interna da Nuuvem (usado pelo site deles)
-        const nuuvemSearchUrl = `https://www.nuuvem.com/api-v2/products/search?q=${appid}&sort=relevance`;
-        const nuuvemResponse = await fetch(nuuvemSearchUrl, {
+        // Busca na página de pesquisa da ENEBA
+        const enebaSearchUrl = `https://www.eneba.com/store/all?text=${searchQuery}`;
+        const enebaResponse = await fetch(enebaSearchUrl, {
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'application/json',
+            'Accept': 'text/html,application/xhtml+xml,application/xml',
           }
         });
         
-        if (nuuvemResponse.ok) {
-          const nuuvemData = await nuuvemResponse.json();
+        if (enebaResponse.ok) {
+          const htmlText = await enebaResponse.text();
           
-          // Procura pelo jogo com o appid correspondente
-          if (nuuvemData?.products && nuuvemData.products.length > 0) {
-            for (const product of nuuvemData.products) {
-              // Verifica se o produto tem o Steam App ID no slug ou metadata
-              if (product.slug?.includes(appid) || product.platforms?.includes('steam')) {
-                const currentPrice = product.price?.brl || product.price?.amount;
-                const originalPrice = product.price?.full_brl || product.price?.original_amount || currentPrice;
-                
-                if (currentPrice) {
-                  const discount = originalPrice && originalPrice > currentPrice 
-                    ? Math.round(((originalPrice - currentPrice) / originalPrice) * 100) 
-                    : 0;
-                  
-                  console.log(`Found on Nuuvem: ${product.name} - R$ ${currentPrice}`);
-                  
-                  prices.push({
-                    store: 'Nuuvem',
-                    price: `R$ ${currentPrice.toFixed(2)}`,
-                    originalPrice: `R$ ${originalPrice.toFixed(2)}`,
-                    discount: discount,
-                    buyUrl: `https://www.nuuvem.com/br-pt/item/${product.slug}`,
-                    available: true,
-                    numericPrice: currentPrice,
-                    numericOriginalPrice: originalPrice
-                  });
-                  break;
-                }
-              }
-            }
+          // Procura por padrões de preço no HTML (formato: R$ XX.XX ou BRL)
+          // Isso é uma implementação básica - pode precisar de ajustes
+          const priceMatch = htmlText.match(/R\$\s*(\d+[.,]\d{2})/);
+          
+          if (priceMatch) {
+            const priceStr = priceMatch[1].replace(',', '.');
+            const currentPrice = parseFloat(priceStr);
+            
+            console.log(`Found on ENEBA: ${gameName} - R$ ${currentPrice}`);
+            
+            prices.push({
+              store: 'ENEBA',
+              price: `R$ ${currentPrice.toFixed(2)}`,
+              originalPrice: `R$ ${currentPrice.toFixed(2)}`,
+              discount: 0,
+              buyUrl: enebaSearchUrl,
+              available: true,
+              numericPrice: currentPrice,
+              numericOriginalPrice: currentPrice
+            });
           }
         }
-      } catch (error) {
-        console.error('Error fetching direct Nuuvem price:', error);
       }
+    } catch (error) {
+      console.error('Error fetching ENEBA price:', error);
     }
 
     console.log(`Total prices found: ${prices.length}`);
