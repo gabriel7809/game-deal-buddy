@@ -5,6 +5,17 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+interface StorePrice {
+  store: string;
+  price: string;
+  originalPrice: string;
+  discount: number;
+  buyUrl: string;
+  available: boolean;
+  numericPrice: number | null;
+  numericOriginalPrice: number | null;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -20,7 +31,7 @@ serve(async (req) => {
       );
     }
 
-    const prices = [];
+    const prices: StorePrice[] = [];
 
     // Busca taxa de câmbio USD para BRL
     let usdToBrl = 5.5; // Taxa padrão caso a API falhe
@@ -185,10 +196,35 @@ serve(async (req) => {
       console.error('Error fetching ENEBA price:', error);
     }
 
-    console.log(`Total prices found: ${prices.length}`);
+    // Garante que sempre tenhamos as 3 lojas na resposta
+    const storeNames = ['Steam', 'Nuuvem', 'ENEBA'];
+    const finalPrices = storeNames.map(storeName => {
+      const existingPrice = prices.find(p => p.store === storeName);
+      if (existingPrice) {
+        return existingPrice;
+      }
+      
+      // Se não encontrou preço, adiciona com status indisponível
+      return {
+        store: storeName,
+        price: 'Indisponível',
+        originalPrice: 'Indisponível',
+        discount: 0,
+        buyUrl: storeName === 'Steam' 
+          ? `https://store.steampowered.com/app/${appid}` 
+          : storeName === 'Nuuvem'
+          ? `https://www.nuuvem.com/br-pt/catalog/price/search/${appid}`
+          : `https://www.eneba.com/store/all?text=${appid}`,
+        available: false,
+        numericPrice: null,
+        numericOriginalPrice: null
+      };
+    });
+
+    console.log(`Total prices found: ${finalPrices.length}`);
 
     return new Response(
-      JSON.stringify({ prices }),
+      JSON.stringify({ prices: finalPrices }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
