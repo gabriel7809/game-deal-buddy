@@ -94,36 +94,47 @@ serve(async (req) => {
     // Marca se encontrou Nuuvem via CheapShark
     let nuuvemFoundInCheapShark = false;
 
-    // Busca direta na Nuuvem
+    // Busca direta na Nuuvem usando nome do jogo
     try {
       console.log('Fetching direct Nuuvem prices...');
       
-      // Busca na API interna da Nuuvem (usado pelo site deles)
-      const nuuvemSearchUrl = `https://www.nuuvem.com/api-v2/products/search?q=${appid}&sort=relevance`;
-      const nuuvemResponse = await fetch(nuuvemSearchUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Accept': 'application/json',
-        }
-      });
+      // Primeiro pega o nome do jogo da Steam
+      const steamInfoResponse = await fetch(`https://store.steampowered.com/api/appdetails?appids=${appid}&cc=br&l=pt`);
+      const steamInfoData = await steamInfoResponse.json();
       
-      if (nuuvemResponse.ok) {
-        const nuuvemData = await nuuvemResponse.json();
+      if (steamInfoData[appid]?.success && steamInfoData[appid]?.data?.name) {
+        const gameName = steamInfoData[appid].data.name;
+        console.log(`Searching Nuuvem for: ${gameName}`);
         
-        // Procura pelo jogo com o appid correspondente
-        if (nuuvemData?.products && nuuvemData.products.length > 0) {
-          for (const product of nuuvemData.products) {
-            // Verifica se o produto tem o Steam App ID no slug ou metadata
-            if (product.slug?.includes(appid) || product.platforms?.includes('steam')) {
+        // Busca na API da Nuuvem usando o nome do jogo
+        const searchQuery = encodeURIComponent(gameName);
+        const nuuvemSearchUrl = `https://www.nuuvem.com/api-v2/products/search?q=${searchQuery}&sort=relevance&limit=10`;
+        
+        const nuuvemResponse = await fetch(nuuvemSearchUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'application/json',
+          }
+        });
+        
+        if (nuuvemResponse.ok) {
+          const nuuvemData = await nuuvemResponse.json();
+          
+          if (nuuvemData?.products && nuuvemData.products.length > 0) {
+            // Pega o primeiro resultado (mais relevante)
+            const product = nuuvemData.products[0];
+            
+            // Verifica se é um jogo para PC/Steam
+            if (product.platforms && (product.platforms.includes('steam') || product.platforms.includes('pc'))) {
               const currentPrice = product.price?.brl || product.price?.amount;
               const originalPrice = product.price?.full_brl || product.price?.original_amount || currentPrice;
               
-              if (currentPrice) {
+              if (currentPrice && currentPrice > 0) {
                 const discount = originalPrice && originalPrice > currentPrice 
                   ? Math.round(((originalPrice - currentPrice) / originalPrice) * 100) 
                   : 0;
                 
-                console.log(`Found on Nuuvem: ${product.name} - R$ ${currentPrice}`);
+                console.log(`Found on Nuuvem: ${product.name} - R$ ${currentPrice.toFixed(2)}`);
                 
                 prices.push({
                   store: 'Nuuvem',
@@ -135,7 +146,6 @@ serve(async (req) => {
                   numericPrice: currentPrice,
                   numericOriginalPrice: originalPrice
                 });
-                break;
               }
             }
           }
@@ -155,40 +165,96 @@ serve(async (req) => {
       
       if (steamData[appid]?.success && steamData[appid]?.data?.name) {
         const gameName = steamData[appid].data.name;
-        const searchQuery = encodeURIComponent(gameName + ' steam');
+        console.log(`Searching ENEBA for: ${gameName}`);
         
-        // Busca na página de pesquisa da ENEBA
-        const enebaSearchUrl = `https://www.eneba.com/store/all?text=${searchQuery}`;
+        // Tenta buscar na ENEBA com o nome do jogo
+        const searchQuery = encodeURIComponent(gameName);
+        const enebaSearchUrl = `https://www.eneba.com/br/store/search/?text=${searchQuery}&drms[0]=steam&page=1`;
+        
         const enebaResponse = await fetch(enebaSearchUrl, {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+            'Referer': 'https://www.eneba.com/',
           }
         });
         
         if (enebaResponse.ok) {
           const htmlText = await enebaResponse.text();
           
-          // Procura por padrões de preço no HTML (formato: R$ XX.XX ou BRL)
-          // Isso é uma implementação básica - pode precisar de ajustes
-          const priceMatch = htmlText.match(/R\$\s*(\d+[.,]\d{2})/);
+          // Procura por dados JSON embutidos na página (método mais confiável)
+          const nextDataMatch = htmlText.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/);
           
-          if (priceMatch) {
-            const priceStr = priceMatch[1].replace(',', '.');
-            const currentPrice = parseFloat(priceStr);
+          if (nextDataMatch) {
+            try {
+              const nextData = JSON.parse(nextDataMatch[1]);
+              const products = nextData?.props?.pageProps?.products?.data;
+              
+              if (products && products.length > 0) {
+                const product = products[0]; // Primeiro resultado
+                const priceData = product?.prices?.[0];
+                
+                if (priceData) {
+                  const currentPrice = priceData.price?.amount;
+                  const currency = priceData.price?.currency;
+                  
+                  // Converte para BRL se necessário
+                  if (currentPrice && currency === 'BRL') {
+                    console.log(`Found on ENEBA: ${product.name} - R$ ${currentPrice.toFixed(2)}`);
+                    
+                    prices.push({
+                      store: 'ENEBA',
+                      price: `R$ ${currentPrice.toFixed(2)}`,
+                      originalPrice: `R$ ${currentPrice.toFixed(2)}`,
+                      discount: 0,
+                      buyUrl: `https://www.eneba.com${product.slug}`,
+                      available: true,
+                      numericPrice: currentPrice,
+                      numericOriginalPrice: currentPrice
+                    });
+                  } else if (currentPrice && currency === 'EUR') {
+                    // Converte EUR para BRL
+                    const brlPrice = currentPrice * 6.2; // Taxa aproximada EUR->BRL
+                    console.log(`Found on ENEBA: ${product.name} - R$ ${brlPrice.toFixed(2)} (convertido de EUR)`);
+                    
+                    prices.push({
+                      store: 'ENEBA',
+                      price: `R$ ${brlPrice.toFixed(2)}`,
+                      originalPrice: `R$ ${brlPrice.toFixed(2)}`,
+                      discount: 0,
+                      buyUrl: `https://www.eneba.com${product.slug}`,
+                      available: true,
+                      numericPrice: brlPrice,
+                      numericOriginalPrice: brlPrice
+                    });
+                  }
+                }
+              }
+            } catch (parseError) {
+              console.error('Error parsing ENEBA JSON data:', parseError);
+            }
+          } else {
+            // Fallback: tenta extrair preço do HTML
+            const priceMatch = htmlText.match(/R\$\s*(\d+[.,]\d{2})/);
             
-            console.log(`Found on ENEBA: ${gameName} - R$ ${currentPrice}`);
-            
-            prices.push({
-              store: 'ENEBA',
-              price: `R$ ${currentPrice.toFixed(2)}`,
-              originalPrice: `R$ ${currentPrice.toFixed(2)}`,
-              discount: 0,
-              buyUrl: enebaSearchUrl,
-              available: true,
-              numericPrice: currentPrice,
-              numericOriginalPrice: currentPrice
-            });
+            if (priceMatch) {
+              const priceStr = priceMatch[1].replace(',', '.');
+              const currentPrice = parseFloat(priceStr);
+              
+              console.log(`Found on ENEBA (HTML): ${gameName} - R$ ${currentPrice}`);
+              
+              prices.push({
+                store: 'ENEBA',
+                price: `R$ ${currentPrice.toFixed(2)}`,
+                originalPrice: `R$ ${currentPrice.toFixed(2)}`,
+                discount: 0,
+                buyUrl: enebaSearchUrl,
+                available: true,
+                numericPrice: currentPrice,
+                numericOriginalPrice: currentPrice
+              });
+            }
           }
         }
       }
