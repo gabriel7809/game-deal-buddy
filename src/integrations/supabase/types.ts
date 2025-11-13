@@ -56,6 +56,51 @@ export type Database = {
         }
         Relationships: []
       }
+      game_prices: {
+        Row: {
+          appid: string
+          available: boolean
+          buy_url: string
+          created_at: string
+          discount: number
+          id: string
+          last_updated: string
+          numeric_original_price: number | null
+          numeric_price: number | null
+          original_price: string
+          price: string
+          store: string
+        }
+        Insert: {
+          appid: string
+          available?: boolean
+          buy_url: string
+          created_at?: string
+          discount?: number
+          id?: string
+          last_updated?: string
+          numeric_original_price?: number | null
+          numeric_price?: number | null
+          original_price: string
+          price: string
+          store: string
+        }
+        Update: {
+          appid?: string
+          available?: boolean
+          buy_url?: string
+          created_at?: string
+          discount?: number
+          id?: string
+          last_updated?: string
+          numeric_original_price?: number | null
+          numeric_price?: number | null
+          original_price?: string
+          price?: string
+          store?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
