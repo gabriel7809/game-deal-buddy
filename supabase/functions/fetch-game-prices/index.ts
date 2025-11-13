@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -31,6 +32,39 @@ serve(async (req) => {
       );
     }
 
+    // Initialize Supabase client
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Check cache first (prices updated in the last hour)
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const { data: cachedPrices, error: cacheError } = await supabase
+      .from('game_prices')
+      .select('*')
+      .eq('appid', appid)
+      .gte('last_updated', oneHourAgo);
+
+    if (!cacheError && cachedPrices && cachedPrices.length === 3) {
+      console.log(`Using cached prices for appid ${appid}`);
+      const prices = cachedPrices.map(cp => ({
+        store: cp.store,
+        price: cp.price,
+        originalPrice: cp.original_price,
+        discount: cp.discount,
+        buyUrl: cp.buy_url,
+        available: cp.available,
+        numericPrice: cp.numeric_price ? parseFloat(cp.numeric_price) : null,
+        numericOriginalPrice: cp.numeric_original_price ? parseFloat(cp.numeric_original_price) : null
+      }));
+      
+      return new Response(
+        JSON.stringify({ prices }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log(`Fetching fresh prices for appid ${appid}`);
     const prices: StorePrice[] = [];
 
     // Busca taxa de câmbio USD para BRL
@@ -288,6 +322,27 @@ serve(async (req) => {
     });
 
     console.log(`Total prices found: ${finalPrices.length}`);
+
+    // Save prices to database
+    for (const price of finalPrices) {
+      await supabase
+        .from('game_prices')
+        .upsert({
+          appid,
+          store: price.store,
+          price: price.price,
+          original_price: price.originalPrice,
+          discount: price.discount,
+          buy_url: price.buyUrl,
+          available: price.available,
+          numeric_price: price.numericPrice,
+          numeric_original_price: price.numericOriginalPrice
+        }, {
+          onConflict: 'appid,store'
+        });
+    }
+
+    console.log(`Prices saved to database for appid ${appid}`);
 
     return new Response(
       JSON.stringify({ prices: finalPrices }),
