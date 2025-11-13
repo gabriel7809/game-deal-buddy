@@ -37,7 +37,7 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Check cache first (prices updated in the last hour)
+    // Check cache first (prices updated in the last hour, and with at least 2 available stores)
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     const { data: cachedPrices, error: cacheError } = await supabase
       .from('game_prices')
@@ -45,8 +45,10 @@ serve(async (req) => {
       .eq('appid', appid)
       .gte('last_updated', oneHourAgo);
 
-    if (!cacheError && cachedPrices && cachedPrices.length === 3) {
-      console.log(`Using cached prices for appid ${appid}`);
+    const availableStores = cachedPrices?.filter(p => p.available && p.numeric_price && p.numeric_price > 0).length || 0;
+
+    if (!cacheError && cachedPrices && cachedPrices.length === 3 && availableStores >= 2) {
+      console.log(`Using cached prices for appid ${appid} (${availableStores} stores available)`);
       const prices = cachedPrices.map(cp => ({
         store: cp.store,
         price: cp.price,
@@ -64,7 +66,7 @@ serve(async (req) => {
       );
     }
 
-    console.log(`Fetching fresh prices for appid ${appid}`);
+    console.log(`Fetching fresh prices for appid ${appid} (cache miss or insufficient data)`);
     const prices: StorePrice[] = [];
 
     // Busca taxa de câmbio USD para BRL
@@ -304,11 +306,11 @@ serve(async (req) => {
         return existingPrice;
       }
       
-      // Se não encontrou preço, adiciona com status indisponível
+      // Se não encontrou preço, retorna mas não salva no banco
       return {
         store: storeName,
-        price: 'Indisponível',
-        originalPrice: 'Indisponível',
+        price: 'Consulte a loja',
+        originalPrice: 'Consulte a loja',
         discount: 0,
         buyUrl: storeName === 'Steam' 
           ? `https://store.steampowered.com/app/${appid}` 
@@ -323,26 +325,29 @@ serve(async (req) => {
 
     console.log(`Total prices found: ${finalPrices.length}`);
 
-    // Save prices to database
+    // Save only available prices to database (don't cache unavailable prices)
     for (const price of finalPrices) {
-      await supabase
-        .from('game_prices')
-        .upsert({
-          appid,
-          store: price.store,
-          price: price.price,
-          original_price: price.originalPrice,
-          discount: price.discount,
-          buy_url: price.buyUrl,
-          available: price.available,
-          numeric_price: price.numericPrice,
-          numeric_original_price: price.numericOriginalPrice
-        }, {
-          onConflict: 'appid,store'
-        });
+      if (price.available && price.numericPrice && price.numericPrice > 0) {
+        await supabase
+          .from('game_prices')
+          .upsert({
+            appid,
+            store: price.store,
+            price: price.price,
+            original_price: price.originalPrice,
+            discount: price.discount,
+            buy_url: price.buyUrl,
+            available: price.available,
+            numeric_price: price.numericPrice,
+            numeric_original_price: price.numericOriginalPrice
+          }, {
+            onConflict: 'appid,store'
+          });
+        console.log(`Saved price for ${price.store}: ${price.price}`);
+      }
     }
 
-    console.log(`Prices saved to database for appid ${appid}`);
+    console.log(`Available prices saved to database for appid ${appid}`);
 
     return new Response(
       JSON.stringify({ prices: finalPrices }),
