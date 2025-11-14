@@ -89,17 +89,29 @@ const GameDetails = () => {
 
     try {
       setLoadingPrices(true);
+      console.log('Fetching prices for game:', gameId);
       const { data, error } = await supabase.functions.invoke('fetch-game-prices', {
         body: { appid: gameId }
       });
       
+      console.log('Prices response:', data);
+      console.log('Prices error:', error);
+      
       if (error) throw error;
       
       if (data?.prices) {
+        console.log('Setting prices:', data.prices);
         setPrices(data.prices);
+      } else {
+        console.log('No prices in response');
       }
     } catch (error: any) {
       console.error("Error fetching prices:", error);
+      toast({
+        title: "Erro ao buscar preços",
+        description: error.message || "Não foi possível carregar os preços",
+        variant: "destructive",
+      });
     } finally {
       setLoadingPrices(false);
     }
