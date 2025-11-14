@@ -146,45 +146,76 @@ serve(async (req) => {
         const searchQuery = encodeURIComponent(gameName);
         const nuuvemApiUrl = `https://api.nuuvem.com/catalog/filters/search?term=${searchQuery}`;
         
+        console.log(`Nuuvem API URL: ${nuuvemApiUrl}`);
+        
         const nuuvemResponse = await fetch(nuuvemApiUrl, {
           headers: {
             'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0',
           }
         });
         
+        console.log(`Nuuvem response status: ${nuuvemResponse.status}`);
+        
         if (nuuvemResponse.ok) {
           const nuuvemData = await nuuvemResponse.json();
+          console.log(`Nuuvem response data structure:`, JSON.stringify(nuuvemData).substring(0, 500));
           
-          if (nuuvemData?.products && nuuvemData.products.length > 0) {
-            // Pega o primeiro resultado (mais relevante)
-            const product = nuuvemData.products[0];
+          // Tenta diferentes estruturas de resposta
+          const products = nuuvemData?.products || nuuvemData?.data?.products || nuuvemData;
+          
+          if (Array.isArray(products) && products.length > 0) {
+            console.log(`Found ${products.length} products on Nuuvem`);
+            const product = products[0];
+            console.log(`First product:`, JSON.stringify(product).substring(0, 300));
             
-            const currentPrice = product.price?.brl || product.price?.amount;
-            const originalPrice = product.price?.full_brl || product.price?.original_amount || currentPrice;
+            // Tenta diferentes estruturas de preço
+            let currentPrice = product.price?.brl || product.price?.amount || product.price || product.preco || product.valor;
+            let originalPrice = product.price?.full_brl || product.price?.original_amount || currentPrice;
+            
+            // Se o preço é string, converte para número
+            if (typeof currentPrice === 'string') {
+              currentPrice = parseFloat(currentPrice.replace(/[^\d.,]/g, '').replace(',', '.'));
+            }
+            if (typeof originalPrice === 'string') {
+              originalPrice = parseFloat(originalPrice.replace(/[^\d.,]/g, '').replace(',', '.'));
+            }
             
             if (currentPrice && currentPrice > 0) {
               const discount = originalPrice && originalPrice > currentPrice 
                 ? Math.round(((originalPrice - currentPrice) / originalPrice) * 100) 
                 : 0;
               
-              console.log(`Found on Nuuvem: ${product.name} - R$ ${currentPrice.toFixed(2)}`);
+              const productUrl = product.url || product.slug || product.link;
+              const buyUrl = productUrl?.startsWith('http') 
+                ? productUrl 
+                : `https://www.nuuvem.com${productUrl || ''}`;
+              
+              console.log(`Found on Nuuvem: ${product.name || product.title} - R$ ${currentPrice.toFixed(2)}`);
               
               prices.push({
                 store: 'Nuuvem',
                 price: `R$ ${currentPrice.toFixed(2)}`,
                 originalPrice: `R$ ${originalPrice.toFixed(2)}`,
                 discount: discount,
-                buyUrl: `https://www.nuuvem.com${product.url}`,
+                buyUrl: buyUrl,
                 available: true,
                 numericPrice: currentPrice,
                 numericOriginalPrice: originalPrice
               });
+            } else {
+              console.log('Nuuvem: No valid price found in product data');
             }
+          } else {
+            console.log('Nuuvem: No products array found in response');
           }
+        } else {
+          console.log(`Nuuvem API returned status: ${nuuvemResponse.status}`);
         }
       }
     } catch (error) {
       console.error('Error fetching Nuuvem price:', error);
+      console.error('Error details:', error instanceof Error ? error.message : 'Unknown error');
     }
 
     // Busca direta na ENEBA usando API pública
@@ -203,75 +234,87 @@ serve(async (req) => {
         const searchQuery = encodeURIComponent(gameName);
         const enebaApiUrl = `https://www.eneba.com/store/api/products?text=${searchQuery}`;
         
+        console.log(`ENEBA API URL: ${enebaApiUrl}`);
+        
         const enebaResponse = await fetch(enebaApiUrl, {
           headers: {
             'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0',
           }
         });
         
+        console.log(`ENEBA response status: ${enebaResponse.status}`);
+        
         if (enebaResponse.ok) {
           const enebaData = await enebaResponse.json();
+          console.log(`ENEBA response data structure:`, JSON.stringify(enebaData).substring(0, 500));
           
-          if (enebaData?.data && enebaData.data.length > 0) {
-            // Pega o primeiro resultado (mais relevante)
-            const product = enebaData.data[0];
-            const priceData = product?.prices?.[0];
+          // Tenta diferentes estruturas de resposta
+          const products = enebaData?.data || enebaData?.products || enebaData;
+          
+          if (Array.isArray(products) && products.length > 0) {
+            console.log(`Found ${products.length} products on ENEBA`);
+            const product = products[0];
+            console.log(`First product:`, JSON.stringify(product).substring(0, 300));
+            
+            // Tenta diferentes estruturas de preço
+            const priceData = product?.prices?.[0] || product?.price;
             
             if (priceData) {
-              const currentPrice = priceData.price?.amount;
-              const currency = priceData.price?.currency;
+              let currentPrice = priceData.price?.amount || priceData.amount || priceData;
+              const currency = priceData.price?.currency || priceData.currency || 'BRL';
               
-              // Converte para BRL se necessário
-              if (currentPrice && currency === 'BRL') {
-                console.log(`Found on ENEBA: ${product.name} - R$ ${currentPrice.toFixed(2)}`);
-                
-                prices.push({
-                  store: 'ENEBA',
-                  price: `R$ ${currentPrice.toFixed(2)}`,
-                  originalPrice: `R$ ${currentPrice.toFixed(2)}`,
-                  discount: 0,
-                  buyUrl: `https://www.eneba.com${product.slug}`,
-                  available: true,
-                  numericPrice: currentPrice,
-                  numericOriginalPrice: currentPrice
-                });
-              } else if (currentPrice && currency === 'EUR') {
-                // Converte EUR para BRL usando taxa de câmbio
-                const brlPrice = currentPrice * usdToBrl * 1.13; // USD->BRL e EUR é ~13% mais caro
-                console.log(`Found on ENEBA: ${product.name} - R$ ${brlPrice.toFixed(2)} (converted from EUR)`);
-                
-                prices.push({
-                  store: 'ENEBA',
-                  price: `R$ ${brlPrice.toFixed(2)}`,
-                  originalPrice: `R$ ${brlPrice.toFixed(2)}`,
-                  discount: 0,
-                  buyUrl: `https://www.eneba.com${product.slug}`,
-                  available: true,
-                  numericPrice: brlPrice,
-                  numericOriginalPrice: brlPrice
-                });
-              } else if (currentPrice && currency === 'USD') {
-                // Converte USD para BRL
-                const brlPrice = currentPrice * usdToBrl;
-                console.log(`Found on ENEBA: ${product.name} - R$ ${brlPrice.toFixed(2)} (converted from USD)`);
-                
-                prices.push({
-                  store: 'ENEBA',
-                  price: `R$ ${brlPrice.toFixed(2)}`,
-                  originalPrice: `R$ ${brlPrice.toFixed(2)}`,
-                  discount: 0,
-                  buyUrl: `https://www.eneba.com${product.slug}`,
-                  available: true,
-                  numericPrice: brlPrice,
-                  numericOriginalPrice: brlPrice
-                });
+              // Se o preço é string, converte para número
+              if (typeof currentPrice === 'string') {
+                currentPrice = parseFloat(currentPrice.replace(/[^\d.,]/g, '').replace(',', '.'));
               }
+              
+              if (currentPrice && currentPrice > 0) {
+                // Converte para BRL se necessário
+                let brlPrice = currentPrice;
+                let conversionNote = '';
+                
+                if (currency === 'EUR') {
+                  brlPrice = currentPrice * usdToBrl * 1.13; // EUR é ~13% mais caro que USD
+                  conversionNote = ' (converted from EUR)';
+                } else if (currency === 'USD') {
+                  brlPrice = currentPrice * usdToBrl;
+                  conversionNote = ' (converted from USD)';
+                }
+                
+                const productSlug = product.slug || product.url || '';
+                const buyUrl = productSlug.startsWith('http') 
+                  ? productSlug 
+                  : `https://www.eneba.com${productSlug}`;
+                
+                console.log(`Found on ENEBA: ${product.name || product.title} - R$ ${brlPrice.toFixed(2)}${conversionNote}`);
+                
+                prices.push({
+                  store: 'ENEBA',
+                  price: `R$ ${brlPrice.toFixed(2)}`,
+                  originalPrice: `R$ ${brlPrice.toFixed(2)}`,
+                  discount: 0,
+                  buyUrl: buyUrl,
+                  available: true,
+                  numericPrice: brlPrice,
+                  numericOriginalPrice: brlPrice
+                });
+              } else {
+                console.log('ENEBA: No valid price found in product data');
+              }
+            } else {
+              console.log('ENEBA: No price data found in product');
             }
+          } else {
+            console.log('ENEBA: No products array found in response');
           }
+        } else {
+          console.log(`ENEBA API returned status: ${enebaResponse.status}`);
         }
       }
     } catch (error) {
       console.error('Error fetching ENEBA price:', error);
+      console.error('Error details:', error instanceof Error ? error.message : 'Unknown error');
     }
 
     // Garante que sempre tenhamos as 3 lojas na resposta
