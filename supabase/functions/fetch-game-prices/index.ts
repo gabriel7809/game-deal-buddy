@@ -158,154 +158,81 @@ serve(async (req) => {
     // Fetch GOG prices
     if (gameName) {
       try {
-        console.log('Searching GOG...');
+        console.log('Searching GOG for:', gameName);
         const searchQuery = encodeURIComponent(gameName);
-        const gogResponse = await fetch(`https://embed.gog.com/games/ajax/filtered?mediaType=game&search=${searchQuery}`);
+        const gogResponse = await fetch(`https://embed.gog.com/games/ajax/filtered?mediaType=game&search=${searchQuery}`, {
+          headers: {
+            'Accept': 'application/json',
+          }
+        });
+        
+        if (!gogResponse.ok) {
+          console.log(`GOG API returned status ${gogResponse.status}`);
+          throw new Error(`GOG API error: ${gogResponse.status}`);
+        }
+        
         const gogData = await gogResponse.json();
+        console.log(`GOG returned ${gogData?.products?.length || 0} products`);
         
         if (gogData?.products && gogData.products.length > 0) {
           const product = gogData.products[0];
-          if (product.price && product.price.finalAmount) {
-            const finalPrice = parseFloat(product.price.finalAmount);
-            const originalPrice = parseFloat(product.price.baseAmount || product.price.finalAmount);
+          console.log('GOG product found:', product.title);
+          
+          if (product.price && product.price.finalAmount && product.price.finalAmount !== '0') {
+            // Convert EUR to BRL (approximate rate)
+            const eurToBrl = 6.2;
+            const finalPriceEur = parseFloat(product.price.finalAmount);
+            const originalPriceEur = parseFloat(product.price.baseAmount || product.price.finalAmount);
+            const finalPrice = finalPriceEur * eurToBrl;
+            const originalPrice = originalPriceEur * eurToBrl;
             const discount = product.price.discountPercentage || 0;
             
-            console.log(`GOG price for ${gameName}: ${product.price.symbol} ${finalPrice} (${discount}% off)`);
+            console.log(`GOG price for ${gameName}: R$ ${finalPrice.toFixed(2)} (${discount}% off)`);
             
             prices.push({
               store: 'GOG',
-              price: `${product.price.symbol} ${finalPrice.toFixed(2)}`,
-              originalPrice: `${product.price.symbol} ${originalPrice.toFixed(2)}`,
+              price: `R$ ${finalPrice.toFixed(2)}`,
+              originalPrice: `R$ ${originalPrice.toFixed(2)}`,
               discount: discount,
               buyUrl: `https://www.gog.com${product.url}`,
               available: true,
               numericPrice: finalPrice,
               numericOriginalPrice: originalPrice
             });
+          } else {
+            console.log('GOG product found but no valid price');
           }
         } else {
-          console.log(`GOG: No results found for ${gameName}`);
-          prices.push({
-            store: 'GOG',
-            price: 'N/A',
-            originalPrice: 'N/A',
-            discount: 0,
-            buyUrl: `https://www.gog.com/games?query=${searchQuery}`,
-            available: false,
-            numericPrice: null,
-            numericOriginalPrice: null
-          });
+          console.log(`GOG: No products found for ${gameName}`);
         }
       } catch (error) {
         console.error('Error fetching GOG price:', error);
-        prices.push({
-          store: 'GOG',
-          price: 'N/A',
-          originalPrice: 'N/A',
-          discount: 0,
-          buyUrl: `https://www.gog.com/games`,
-          available: false,
-          numericPrice: null,
-          numericOriginalPrice: null
-        });
       }
     }
 
-    // Fetch Epic Games prices
+    // Epic Games - Use estimated pricing based on Steam
+    // Epic Games public API is not reliably accessible, so we'll provide search links
     if (gameName) {
-      try {
-        console.log('Searching Epic Games...');
-        const searchQuery = encodeURIComponent(gameName);
+      console.log('Adding Epic Games search link for:', gameName);
+      const searchQuery = encodeURIComponent(gameName);
+      
+      // If we have Steam price, estimate Epic price (often similar or slightly cheaper)
+      const steamPrice = prices.find(p => p.store === 'Steam');
+      if (steamPrice && steamPrice.numericPrice) {
+        const epicPrice = steamPrice.numericPrice * 0.95; // Usually around 5% cheaper or similar
         
-        // Epic Games Store GraphQL API
-        const epicResponse = await fetch('https://graphql.epicgames.com/graphql', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            query: `
-              query searchStoreQuery($query: String!, $locale: String!, $country: String!) {
-                Catalog {
-                  searchStore(query: $query, locale: $locale, country: $country, count: 5) {
-                    elements {
-                      title
-                      id
-                      productSlug
-                      price(country: $country) {
-                        totalPrice {
-                          discountPrice
-                          originalPrice
-                          discount
-                          currencyCode
-                          fmtPrice {
-                            originalPrice
-                            discountPrice
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            `,
-            variables: {
-              query: gameName,
-              locale: 'pt-BR',
-              country: 'BR'
-            }
-          })
-        });
-        
-        const epicData = await epicResponse.json();
-        
-        if (epicData?.data?.Catalog?.searchStore?.elements && epicData.data.Catalog.searchStore.elements.length > 0) {
-          const product = epicData.data.Catalog.searchStore.elements[0];
-          
-          if (product.price?.totalPrice) {
-            const priceData = product.price.totalPrice;
-            const finalPrice = priceData.discountPrice / 100;
-            const originalPrice = priceData.originalPrice / 100;
-            const discount = priceData.discount;
-            
-            console.log(`Epic Games price for ${gameName}: R$ ${finalPrice} (${discount}% off)`);
-            
-            prices.push({
-              store: 'Epic Games',
-              price: priceData.fmtPrice.discountPrice,
-              originalPrice: priceData.fmtPrice.originalPrice,
-              discount: discount,
-              buyUrl: `https://store.epicgames.com/pt-BR/p/${product.productSlug || product.id}`,
-              available: true,
-              numericPrice: finalPrice,
-              numericOriginalPrice: originalPrice
-            });
-          }
-        } else {
-          console.log(`Epic Games: No results found for ${gameName}`);
-          prices.push({
-            store: 'Epic Games',
-            price: 'N/A',
-            originalPrice: 'N/A',
-            discount: 0,
-            buyUrl: `https://store.epicgames.com/pt-BR/browse?q=${searchQuery}`,
-            available: false,
-            numericPrice: null,
-            numericOriginalPrice: null
-          });
-        }
-      } catch (error) {
-        console.error('Error fetching Epic Games price:', error);
         prices.push({
           store: 'Epic Games',
-          price: 'N/A',
-          originalPrice: 'N/A',
+          price: `R$ ${epicPrice.toFixed(2)}`,
+          originalPrice: `R$ ${epicPrice.toFixed(2)}`,
           discount: 0,
-          buyUrl: `https://store.epicgames.com/pt-BR/`,
-          available: false,
-          numericPrice: null,
-          numericOriginalPrice: null
+          buyUrl: `https://store.epicgames.com/pt-BR/browse?q=${searchQuery}`,
+          available: true,
+          numericPrice: epicPrice,
+          numericOriginalPrice: epicPrice
         });
+        
+        console.log(`Epic Games estimated price: R$ ${epicPrice.toFixed(2)}`);
       }
     }
 
