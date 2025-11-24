@@ -47,9 +47,12 @@ serve(async (req) => {
 
     const availableStores = cachedPrices?.filter(p => p.available && p.numeric_price && p.numeric_price > 0).length || 0;
 
-    if (!cacheError && cachedPrices && cachedPrices.length === 3 && availableStores >= 2) {
+    // Return cache if we have Steam price and at least one other store
+    if (!cacheError && cachedPrices && cachedPrices.length >= 2 && availableStores >= 1) {
       console.log(`Using cached prices for appid ${appid} (${availableStores} stores available)`);
-      const prices = cachedPrices.map(cp => ({
+      
+      // Map cached prices
+      const cachedPricesList = cachedPrices.map(cp => ({
         store: cp.store,
         price: cp.price,
         originalPrice: cp.original_price,
@@ -60,8 +63,32 @@ serve(async (req) => {
         numericOriginalPrice: cp.numeric_original_price ? parseFloat(cp.numeric_original_price) : null
       }));
       
+      // Ensure we always have all 3 stores in response
+      const storeNames = ['Steam', 'GOG', 'Epic Games'];
+      const completePrices = storeNames.map(storeName => {
+        const existingPrice = cachedPricesList.find(p => p.store === storeName);
+        if (existingPrice) {
+          return existingPrice;
+        }
+        // Return placeholder for missing stores
+        return {
+          store: storeName,
+          price: 'Consulte a loja',
+          originalPrice: 'Consulte a loja',
+          discount: 0,
+          buyUrl: storeName === 'Steam' 
+            ? `https://store.steampowered.com/app/${appid}` 
+            : storeName === 'GOG'
+            ? `https://www.gog.com/games`
+            : `https://store.epicgames.com/pt-BR/`,
+          available: false,
+          numericPrice: null,
+          numericOriginalPrice: null
+        };
+      });
+      
       return new Response(
-        JSON.stringify({ prices }),
+        JSON.stringify({ prices: completePrices }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
