@@ -37,7 +37,7 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Check cache first (prices updated in the last hour, and with at least 2 available stores)
+    // Check cache first (prices updated in the last hour)
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     const { data: cachedPrices, error: cacheError } = await supabase
       .from('game_prices')
@@ -69,16 +69,17 @@ serve(async (req) => {
     console.log(`Fetching fresh prices for appid ${appid} (cache miss or insufficient data)`);
     const prices: StorePrice[] = [];
 
-    // Busca taxa de câmbio USD para BRL
-    let usdToBrl = 5.5; // Taxa padrão caso a API falhe
+    // Get game name from Steam first for searching other stores
+    let gameName = '';
     try {
-      const exchangeResponse = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
-      const exchangeData = await exchangeResponse.json();
-      if (exchangeData?.rates?.BRL) {
-        usdToBrl = exchangeData.rates.BRL;
+      const steamInfoResponse = await fetch(`https://store.steampowered.com/api/appdetails?appids=${appid}&cc=br&l=pt`);
+      const steamInfoData = await steamInfoResponse.json();
+      if (steamInfoData[appid]?.success && steamInfoData[appid]?.data?.name) {
+        gameName = steamInfoData[appid].data.name;
+        console.log(`Game name from Steam: ${gameName}`);
       }
     } catch (error) {
-      console.error('Error fetching exchange rate:', error);
+      console.error('Error fetching game name from Steam:', error);
     }
 
     // Busca preço da Steam (sempre em BRL direto)
@@ -127,84 +128,169 @@ serve(async (req) => {
       });
     }
 
-    // Marca se encontrou Nuuvem via CheapShark
-    let nuuvemFoundInCheapShark = false;
-
-    // Busca na Nuuvem - Usando busca direta no site
-    try {
-      console.log('Searching Nuuvem...');
-      const steamInfoResponse = await fetch(`https://store.steampowered.com/api/appdetails?appids=${appid}&cc=br&l=pt`);
-      const steamInfoData = await steamInfoResponse.json();
-      
-      if (steamInfoData[appid]?.success && steamInfoData[appid]?.data?.name) {
-        const gameName = steamInfoData[appid].data.name;
+    // Fetch GOG prices
+    if (gameName) {
+      try {
+        console.log('Searching GOG...');
         const searchQuery = encodeURIComponent(gameName);
+        const gogResponse = await fetch(`https://embed.gog.com/games/ajax/filtered?mediaType=game&search=${searchQuery}`);
+        const gogData = await gogResponse.json();
         
-        // Preço simulado baseado no preço da Steam com desconto típico da Nuuvem
-        const steamPrice = prices.find(p => p.store === 'Steam');
-        if (steamPrice && steamPrice.numericPrice) {
-          const nuuvemPrice = steamPrice.numericPrice * 0.92; // Geralmente 8% mais barato
-          
-          console.log(`Nuuvem estimated price for ${gameName}: R$ ${nuuvemPrice.toFixed(2)}`);
-          
+        if (gogData?.products && gogData.products.length > 0) {
+          const product = gogData.products[0];
+          if (product.price && product.price.finalAmount) {
+            const finalPrice = parseFloat(product.price.finalAmount);
+            const originalPrice = parseFloat(product.price.baseAmount || product.price.finalAmount);
+            const discount = product.price.discountPercentage || 0;
+            
+            console.log(`GOG price for ${gameName}: ${product.price.symbol} ${finalPrice} (${discount}% off)`);
+            
+            prices.push({
+              store: 'GOG',
+              price: `${product.price.symbol} ${finalPrice.toFixed(2)}`,
+              originalPrice: `${product.price.symbol} ${originalPrice.toFixed(2)}`,
+              discount: discount,
+              buyUrl: `https://www.gog.com${product.url}`,
+              available: true,
+              numericPrice: finalPrice,
+              numericOriginalPrice: originalPrice
+            });
+          }
+        } else {
+          console.log(`GOG: No results found for ${gameName}`);
           prices.push({
-            store: 'Nuuvem',
-            price: `R$ ${nuuvemPrice.toFixed(2)}`,
-            originalPrice: `R$ ${nuuvemPrice.toFixed(2)}`,
+            store: 'GOG',
+            price: 'N/A',
+            originalPrice: 'N/A',
             discount: 0,
-            buyUrl: `https://www.nuuvem.com/br-pt/catalog/price/search/${searchQuery}`,
-            available: true,
-            numericPrice: nuuvemPrice,
-            numericOriginalPrice: nuuvemPrice
+            buyUrl: `https://www.gog.com/games?query=${searchQuery}`,
+            available: false,
+            numericPrice: null,
+            numericOriginalPrice: null
           });
         }
+      } catch (error) {
+        console.error('Error fetching GOG price:', error);
+        prices.push({
+          store: 'GOG',
+          price: 'N/A',
+          originalPrice: 'N/A',
+          discount: 0,
+          buyUrl: `https://www.gog.com/games`,
+          available: false,
+          numericPrice: null,
+          numericOriginalPrice: null
+        });
       }
-    } catch (error) {
-      console.error('Error with Nuuvem:', error);
     }
 
-    // Busca na ENEBA - Usando busca direta no site
-    try {
-      console.log('Searching ENEBA...');
-      const steamResponse = await fetch(`https://store.steampowered.com/api/appdetails?appids=${appid}&cc=br&l=pt`);
-      const steamData = await steamResponse.json();
-      
-      if (steamData[appid]?.success && steamData[appid]?.data?.name) {
-        const gameName = steamData[appid].data.name;
+    // Fetch Epic Games prices
+    if (gameName) {
+      try {
+        console.log('Searching Epic Games...');
         const searchQuery = encodeURIComponent(gameName);
         
-        // Preço simulado baseado no preço da Steam com desconto típico da ENEBA
-        const steamPrice = prices.find(p => p.store === 'Steam');
-        if (steamPrice && steamPrice.numericPrice) {
-          const enebaPrice = steamPrice.numericPrice * 0.85; // Geralmente 15% mais barato
+        // Epic Games Store GraphQL API
+        const epicResponse = await fetch('https://graphql.epicgames.com/graphql', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            query: `
+              query searchStoreQuery($query: String!, $locale: String!, $country: String!) {
+                Catalog {
+                  searchStore(query: $query, locale: $locale, country: $country, count: 5) {
+                    elements {
+                      title
+                      id
+                      productSlug
+                      price(country: $country) {
+                        totalPrice {
+                          discountPrice
+                          originalPrice
+                          discount
+                          currencyCode
+                          fmtPrice {
+                            originalPrice
+                            discountPrice
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            `,
+            variables: {
+              query: gameName,
+              locale: 'pt-BR',
+              country: 'BR'
+            }
+          })
+        });
+        
+        const epicData = await epicResponse.json();
+        
+        if (epicData?.data?.Catalog?.searchStore?.elements && epicData.data.Catalog.searchStore.elements.length > 0) {
+          const product = epicData.data.Catalog.searchStore.elements[0];
           
-          console.log(`ENEBA estimated price for ${gameName}: R$ ${enebaPrice.toFixed(2)}`);
-          
+          if (product.price?.totalPrice) {
+            const priceData = product.price.totalPrice;
+            const finalPrice = priceData.discountPrice / 100;
+            const originalPrice = priceData.originalPrice / 100;
+            const discount = priceData.discount;
+            
+            console.log(`Epic Games price for ${gameName}: R$ ${finalPrice} (${discount}% off)`);
+            
+            prices.push({
+              store: 'Epic Games',
+              price: priceData.fmtPrice.discountPrice,
+              originalPrice: priceData.fmtPrice.originalPrice,
+              discount: discount,
+              buyUrl: `https://store.epicgames.com/pt-BR/p/${product.productSlug || product.id}`,
+              available: true,
+              numericPrice: finalPrice,
+              numericOriginalPrice: originalPrice
+            });
+          }
+        } else {
+          console.log(`Epic Games: No results found for ${gameName}`);
           prices.push({
-            store: 'ENEBA',
-            price: `R$ ${enebaPrice.toFixed(2)}`,
-            originalPrice: `R$ ${enebaPrice.toFixed(2)}`,
+            store: 'Epic Games',
+            price: 'N/A',
+            originalPrice: 'N/A',
             discount: 0,
-            buyUrl: `https://www.eneba.com/br/store/all?text=${searchQuery}`,
-            available: true,
-            numericPrice: enebaPrice,
-            numericOriginalPrice: enebaPrice
+            buyUrl: `https://store.epicgames.com/pt-BR/browse?q=${searchQuery}`,
+            available: false,
+            numericPrice: null,
+            numericOriginalPrice: null
           });
         }
+      } catch (error) {
+        console.error('Error fetching Epic Games price:', error);
+        prices.push({
+          store: 'Epic Games',
+          price: 'N/A',
+          originalPrice: 'N/A',
+          discount: 0,
+          buyUrl: `https://store.epicgames.com/pt-BR/`,
+          available: false,
+          numericPrice: null,
+          numericOriginalPrice: null
+        });
       }
-    } catch (error) {
-      console.error('Error with ENEBA:', error);
     }
 
-    // Garante que sempre tenhamos as 3 lojas na resposta
-    const storeNames = ['Steam', 'Nuuvem', 'ENEBA'];
+    // Ensure we always have all 3 stores in the response
+    const storeNames = ['Steam', 'GOG', 'Epic Games'];
     const finalPrices = storeNames.map(storeName => {
       const existingPrice = prices.find(p => p.store === storeName);
       if (existingPrice) {
         return existingPrice;
       }
       
-      // Se não encontrou preço, retorna mas não salva no banco
+      // If no price found, return placeholder
       return {
         store: storeName,
         price: 'Consulte a loja',
@@ -212,9 +298,9 @@ serve(async (req) => {
         discount: 0,
         buyUrl: storeName === 'Steam' 
           ? `https://store.steampowered.com/app/${appid}` 
-          : storeName === 'Nuuvem'
-          ? `https://www.nuuvem.com/br-pt/catalog/price/search/${appid}`
-          : `https://www.eneba.com/store/all?text=${appid}`,
+          : storeName === 'GOG'
+          ? `https://www.gog.com/games`
+          : `https://store.epicgames.com/pt-BR/`,
         available: false,
         numericPrice: null,
         numericOriginalPrice: null
