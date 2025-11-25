@@ -63,29 +63,8 @@ serve(async (req) => {
         numericOriginalPrice: cp.numeric_original_price ? parseFloat(cp.numeric_original_price) : null
       }));
       
-      // Ensure we always have all 3 stores in response
-      const storeNames = ['Steam', 'GOG', 'Epic Games'];
-      const completePrices = storeNames.map(storeName => {
-        const existingPrice = cachedPricesList.find(p => p.store === storeName);
-        if (existingPrice) {
-          return existingPrice;
-        }
-        // Return placeholder for missing stores
-        return {
-          store: storeName,
-          price: 'Consulte a loja',
-          originalPrice: 'Consulte a loja',
-          discount: 0,
-          buyUrl: storeName === 'Steam' 
-            ? `https://store.steampowered.com/app/${appid}` 
-            : storeName === 'GOG'
-            ? `https://www.gog.com/games`
-            : `https://store.epicgames.com/pt-BR/`,
-          available: false,
-          numericPrice: null,
-          numericOriginalPrice: null
-        };
-      });
+      // Return only Steam and GOG prices from cache
+      const completePrices = cachedPricesList.filter(p => p.store === 'Steam' || p.store === 'GOG');
       
       return new Response(
         JSON.stringify({ prices: completePrices }),
@@ -222,125 +201,8 @@ serve(async (req) => {
       }
     }
 
-    // Fetch Epic Games prices
-    if (gameName) {
-      try {
-        console.log('Searching Epic Games for:', gameName);
-        const searchQuery = encodeURIComponent(gameName);
-        
-        // Epic Games GraphQL API
-        const epicResponse = await fetch('https://store.epicgames.com/graphql', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            query: `
-              query searchStoreQuery($query: String!, $locale: String!, $country: String!) {
-                Catalog {
-                  searchStore(query: $query, locale: $locale, country: $country, count: 5) {
-                    elements {
-                      title
-                      id
-                      namespace
-                      catalogNs {
-                        mappings(pageType: "productHome") {
-                          pageSlug
-                        }
-                      }
-                      price(locale: $locale) {
-                        totalPrice {
-                          discountPrice
-                          originalPrice
-                          discount
-                          currencyCode
-                          fmtPrice(locale: $locale) {
-                            originalPrice
-                            discountPrice
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            `,
-            variables: {
-              query: gameName,
-              locale: 'pt-BR',
-              country: 'BR'
-            }
-          })
-        });
-        
-        if (epicResponse.ok) {
-          const epicData = await epicResponse.json();
-          const elements = epicData?.data?.Catalog?.searchStore?.elements;
-          console.log(`Epic Games returned ${elements?.length || 0} products`);
-          
-          if (elements && elements.length > 0) {
-            // Find first game with valid price
-            for (const element of elements) {
-              if (element.price?.totalPrice) {
-                const priceData = element.price.totalPrice;
-                const finalPrice = priceData.discountPrice / 100;
-                const originalPrice = priceData.originalPrice / 100;
-                const discount = priceData.discount || 0;
-                
-                console.log(`Epic Games price for ${element.title}: R$ ${finalPrice.toFixed(2)} (${discount}% off)`);
-                
-                // Get product URL slug
-                const slug = element.catalogNs?.mappings?.[0]?.pageSlug || element.id;
-                
-                prices.push({
-                  store: 'Epic Games',
-                  price: `R$ ${finalPrice.toFixed(2)}`,
-                  originalPrice: `R$ ${originalPrice.toFixed(2)}`,
-                  discount: discount,
-                  buyUrl: `https://store.epicgames.com/pt-BR/p/${slug}`,
-                  available: true,
-                  numericPrice: finalPrice,
-                  numericOriginalPrice: originalPrice
-                });
-                
-                break; // Use first valid result
-              }
-            }
-          } else {
-            console.log(`Epic Games: No products found for ${gameName}`);
-          }
-        } else {
-          console.log(`Epic Games API returned status ${epicResponse.status}`);
-        }
-      } catch (error) {
-        console.error('Error fetching Epic Games price:', error);
-      }
-    }
-
-    // Ensure we always have all 3 stores in the response
-    const storeNames = ['Steam', 'GOG', 'Epic Games'];
-    const finalPrices = storeNames.map(storeName => {
-      const existingPrice = prices.find(p => p.store === storeName);
-      if (existingPrice) {
-        return existingPrice;
-      }
-      
-      // If no price found, return placeholder
-      return {
-        store: storeName,
-        price: 'Consulte a loja',
-        originalPrice: 'Consulte a loja',
-        discount: 0,
-        buyUrl: storeName === 'Steam' 
-          ? `https://store.steampowered.com/app/${appid}` 
-          : storeName === 'GOG'
-          ? `https://www.gog.com/games`
-          : `https://store.epicgames.com/pt-BR/`,
-        available: false,
-        numericPrice: null,
-        numericOriginalPrice: null
-      };
-    });
+    // Return only Steam and GOG prices (those that were found)
+    const finalPrices = prices;
 
     console.log(`Total prices found: ${finalPrices.length}`);
 
