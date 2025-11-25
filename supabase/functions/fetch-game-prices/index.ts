@@ -160,79 +160,160 @@ serve(async (req) => {
       try {
         console.log('Searching GOG for:', gameName);
         const searchQuery = encodeURIComponent(gameName);
-        const gogResponse = await fetch(`https://embed.gog.com/games/ajax/filtered?mediaType=game&search=${searchQuery}`, {
+        
+        // Try GOG search API
+        const gogResponse = await fetch(`https://catalog.gog.com/v1/catalog?query=${searchQuery}&limit=5&order=desc:trending`, {
           headers: {
             'Accept': 'application/json',
           }
         });
         
-        if (!gogResponse.ok) {
-          console.log(`GOG API returned status ${gogResponse.status}`);
-          throw new Error(`GOG API error: ${gogResponse.status}`);
-        }
-        
-        const gogData = await gogResponse.json();
-        console.log(`GOG returned ${gogData?.products?.length || 0} products`);
-        
-        if (gogData?.products && gogData.products.length > 0) {
-          const product = gogData.products[0];
-          console.log('GOG product found:', product.title);
+        if (gogResponse.ok) {
+          const gogData = await gogResponse.json();
+          console.log(`GOG catalog returned ${gogData?.products?.length || 0} products`);
           
-          if (product.price && product.price.finalAmount && product.price.finalAmount !== '0') {
-            // Convert EUR to BRL (approximate rate)
-            const eurToBrl = 6.2;
-            const finalPriceEur = parseFloat(product.price.finalAmount);
-            const originalPriceEur = parseFloat(product.price.baseAmount || product.price.finalAmount);
-            const finalPrice = finalPriceEur * eurToBrl;
-            const originalPrice = originalPriceEur * eurToBrl;
-            const discount = product.price.discountPercentage || 0;
+          if (gogData?.products && gogData.products.length > 0) {
+            // Find best match
+            const product = gogData.products[0];
+            console.log('GOG product found:', product.title);
             
-            console.log(`GOG price for ${gameName}: R$ ${finalPrice.toFixed(2)} (${discount}% off)`);
-            
-            prices.push({
-              store: 'GOG',
-              price: `R$ ${finalPrice.toFixed(2)}`,
-              originalPrice: `R$ ${originalPrice.toFixed(2)}`,
-              discount: discount,
-              buyUrl: `https://www.gog.com${product.url}`,
-              available: true,
-              numericPrice: finalPrice,
-              numericOriginalPrice: originalPrice
-            });
+            // Fetch product details to get pricing
+            try {
+              const productId = product.id;
+              const priceResponse = await fetch(`https://api.gog.com/products/${productId}/prices?countryCode=BR`);
+              
+              if (priceResponse.ok) {
+                const priceData = await priceResponse.json();
+                console.log('GOG price data:', JSON.stringify(priceData));
+                
+                if (priceData?._embedded?.prices && priceData._embedded.prices.length > 0) {
+                  const price = priceData._embedded.prices[0];
+                  const finalPrice = parseFloat(price.finalPrice) / 100; // Price in cents
+                  const basePrice = parseFloat(price.basePrice) / 100;
+                  const discount = price.discountPercentage || 0;
+                  
+                  console.log(`GOG price for ${gameName}: R$ ${finalPrice.toFixed(2)} (${discount}% off)`);
+                  
+                  prices.push({
+                    store: 'GOG',
+                    price: `R$ ${finalPrice.toFixed(2)}`,
+                    originalPrice: `R$ ${basePrice.toFixed(2)}`,
+                    discount: discount,
+                    buyUrl: `https://www.gog.com/game/${product.slug}`,
+                    available: true,
+                    numericPrice: finalPrice,
+                    numericOriginalPrice: basePrice
+                  });
+                } else {
+                  console.log('GOG: No price data available');
+                }
+              }
+            } catch (priceError) {
+              console.error('Error fetching GOG product price:', priceError);
+            }
           } else {
-            console.log('GOG product found but no valid price');
+            console.log(`GOG: No products found for ${gameName}`);
           }
         } else {
-          console.log(`GOG: No products found for ${gameName}`);
+          console.log(`GOG API returned status ${gogResponse.status}`);
         }
       } catch (error) {
         console.error('Error fetching GOG price:', error);
       }
     }
 
-    // Epic Games - Use estimated pricing based on Steam
-    // Epic Games public API is not reliably accessible, so we'll provide search links
+    // Fetch Epic Games prices
     if (gameName) {
-      console.log('Adding Epic Games search link for:', gameName);
-      const searchQuery = encodeURIComponent(gameName);
-      
-      // If we have Steam price, estimate Epic price (often similar or slightly cheaper)
-      const steamPrice = prices.find(p => p.store === 'Steam');
-      if (steamPrice && steamPrice.numericPrice) {
-        const epicPrice = steamPrice.numericPrice * 0.95; // Usually around 5% cheaper or similar
+      try {
+        console.log('Searching Epic Games for:', gameName);
+        const searchQuery = encodeURIComponent(gameName);
         
-        prices.push({
-          store: 'Epic Games',
-          price: `R$ ${epicPrice.toFixed(2)}`,
-          originalPrice: `R$ ${epicPrice.toFixed(2)}`,
-          discount: 0,
-          buyUrl: `https://store.epicgames.com/pt-BR/browse?q=${searchQuery}`,
-          available: true,
-          numericPrice: epicPrice,
-          numericOriginalPrice: epicPrice
+        // Epic Games GraphQL API
+        const epicResponse = await fetch('https://store.epicgames.com/graphql', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            query: `
+              query searchStoreQuery($query: String!, $locale: String!, $country: String!) {
+                Catalog {
+                  searchStore(query: $query, locale: $locale, country: $country, count: 5) {
+                    elements {
+                      title
+                      id
+                      namespace
+                      catalogNs {
+                        mappings(pageType: "productHome") {
+                          pageSlug
+                        }
+                      }
+                      price(locale: $locale) {
+                        totalPrice {
+                          discountPrice
+                          originalPrice
+                          discount
+                          currencyCode
+                          fmtPrice(locale: $locale) {
+                            originalPrice
+                            discountPrice
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            `,
+            variables: {
+              query: gameName,
+              locale: 'pt-BR',
+              country: 'BR'
+            }
+          })
         });
         
-        console.log(`Epic Games estimated price: R$ ${epicPrice.toFixed(2)}`);
+        if (epicResponse.ok) {
+          const epicData = await epicResponse.json();
+          const elements = epicData?.data?.Catalog?.searchStore?.elements;
+          console.log(`Epic Games returned ${elements?.length || 0} products`);
+          
+          if (elements && elements.length > 0) {
+            // Find first game with valid price
+            for (const element of elements) {
+              if (element.price?.totalPrice) {
+                const priceData = element.price.totalPrice;
+                const finalPrice = priceData.discountPrice / 100;
+                const originalPrice = priceData.originalPrice / 100;
+                const discount = priceData.discount || 0;
+                
+                console.log(`Epic Games price for ${element.title}: R$ ${finalPrice.toFixed(2)} (${discount}% off)`);
+                
+                // Get product URL slug
+                const slug = element.catalogNs?.mappings?.[0]?.pageSlug || element.id;
+                
+                prices.push({
+                  store: 'Epic Games',
+                  price: `R$ ${finalPrice.toFixed(2)}`,
+                  originalPrice: `R$ ${originalPrice.toFixed(2)}`,
+                  discount: discount,
+                  buyUrl: `https://store.epicgames.com/pt-BR/p/${slug}`,
+                  available: true,
+                  numericPrice: finalPrice,
+                  numericOriginalPrice: originalPrice
+                });
+                
+                break; // Use first valid result
+              }
+            }
+          } else {
+            console.log(`Epic Games: No products found for ${gameName}`);
+          }
+        } else {
+          console.log(`Epic Games API returned status ${epicResponse.status}`);
+        }
+      } catch (error) {
+        console.error('Error fetching Epic Games price:', error);
       }
     }
 
