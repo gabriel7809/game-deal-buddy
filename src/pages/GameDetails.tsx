@@ -243,37 +243,38 @@ const GameDetails = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {prices.map((storePrice, index) => (
-                    <TableRow key={index}>
-                      <TableCell className="font-medium">{storePrice.store}</TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {storePrice.originalPrice}
-                      </TableCell>
-                      <TableCell>
-                        <span className={storePrice.discount > 0 ? "text-green-600 font-semibold" : ""}>
-                          {storePrice.price}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        {storePrice.discount > 0 && (
-                          <span className="inline-block px-2 py-1 bg-green-600 text-white rounded-full text-xs font-semibold">
-                            -{storePrice.discount}%
+                  {prices
+                    .filter((storePrice) => storePrice.available && storePrice.price !== 'Consulte a loja')
+                    .map((storePrice, index) => (
+                      <TableRow key={index}>
+                        <TableCell className="font-medium">{storePrice.store}</TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {storePrice.originalPrice}
+                        </TableCell>
+                        <TableCell>
+                          <span className={storePrice.discount > 0 ? "text-green-600 font-semibold" : ""}>
+                            {storePrice.price}
                           </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          size="sm"
-                          onClick={() => window.open(storePrice.buyUrl, "_blank")}
-                          className="gap-2"
-                          disabled={!storePrice.available && storePrice.price !== "Consultar"}
-                        >
-                          {storePrice.available ? "Comprar" : "Ver Loja"}
-                          <ExternalLink className="w-4 h-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                        </TableCell>
+                        <TableCell>
+                          {storePrice.discount > 0 && (
+                            <span className="inline-block px-2 py-1 bg-green-600 text-white rounded-full text-xs font-semibold">
+                              -{storePrice.discount}%
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            onClick={() => window.open(storePrice.buyUrl, "_blank")}
+                            className="gap-2"
+                          >
+                            Comprar
+                            <ExternalLink className="w-4 h-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
                 </TableBody>
               </Table>
             )}
