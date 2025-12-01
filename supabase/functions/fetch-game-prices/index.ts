@@ -134,71 +134,69 @@ serve(async (req) => {
       });
     }
 
-    // Fetch GOG prices
-    if (gameName) {
+    // Mapeia Steam App IDs para GOG Product IDs e slugs
+    const steamToGogMap: { [key: string]: { id: string, slug: string } } = {
+      '292030': { id: '1207664643', slug: 'the_witcher_3_wild_hunt' },
+      '1091500': { id: '1423049311', slug: 'cyberpunk_2077' },
+      '1086940': { id: '1456460669', slug: 'baldurs_gate_iii' },
+      '435150': { id: '1584823040', slug: 'divinity_original_sin_2' },
+      '632470': { id: '1771589310', slug: 'disco_elysium' },
+      '413150': { id: '1453375253', slug: 'stardew_valley' },
+      '105600': { id: '1207665503', slug: 'terraria' },
+      '367520': { id: '1308320804', slug: 'hollow_knight' },
+      '646570': { id: '1950754973', slug: 'slay_the_spire' },
+      '588650': { id: '1237807960', slug: 'dead_cells' },
+      '20900': { id: '1207658924', slug: 'the_witcher' },
+    };
+
+    // Fetch GOG prices usando o ID correto do produto
+    const gogMapping = steamToGogMap[appid];
+    if (gogMapping) {
       try {
-        console.log('Searching GOG for:', gameName);
-        const searchQuery = encodeURIComponent(gameName);
+        console.log(`Fetching GOG price for product ID: ${gogMapping.id}`);
         
-        // Try GOG search API
-        const gogResponse = await fetch(`https://catalog.gog.com/v1/catalog?query=${searchQuery}&limit=5&order=desc:trending`, {
-          headers: {
-            'Accept': 'application/json',
-          }
-        });
+        const priceResponse = await fetch(`https://api.gog.com/products/${gogMapping.id}/prices?countryCode=BR`);
         
-        if (gogResponse.ok) {
-          const gogData = await gogResponse.json();
-          console.log(`GOG catalog returned ${gogData?.products?.length || 0} products`);
+        if (priceResponse.ok) {
+          const priceData = await priceResponse.json();
+          console.log('GOG price data:', JSON.stringify(priceData));
           
-          if (gogData?.products && gogData.products.length > 0) {
-            // Find best match
-            const product = gogData.products[0];
-            console.log('GOG product found:', product.title);
+          if (priceData?._embedded?.prices && priceData._embedded.prices.length > 0) {
+            const price = priceData._embedded.prices[0];
+            const finalPrice = parseFloat(price.finalPrice) / 100; // Price in cents
+            const basePrice = parseFloat(price.basePrice) / 100;
             
-            // Fetch product details to get pricing
-            try {
-              const productId = product.id;
-              const priceResponse = await fetch(`https://api.gog.com/products/${productId}/prices?countryCode=BR`);
-              
-              if (priceResponse.ok) {
-                const priceData = await priceResponse.json();
-                console.log('GOG price data:', JSON.stringify(priceData));
-                
-                if (priceData?._embedded?.prices && priceData._embedded.prices.length > 0) {
-                  const price = priceData._embedded.prices[0];
-                  const finalPrice = parseFloat(price.finalPrice) / 100; // Price in cents
-                  const basePrice = parseFloat(price.basePrice) / 100;
-                  const discount = price.discountPercentage || 0;
-                  
-                  console.log(`GOG price for ${gameName}: R$ ${finalPrice.toFixed(2)} (${discount}% off)`);
-                  
-                  prices.push({
-                    store: 'GOG',
-                    price: `R$ ${finalPrice.toFixed(2)}`,
-                    originalPrice: `R$ ${basePrice.toFixed(2)}`,
-                    discount: discount,
-                    buyUrl: `https://www.gog.com/game/${product.slug}`,
-                    available: true,
-                    numericPrice: finalPrice,
-                    numericOriginalPrice: basePrice
-                  });
-                } else {
-                  console.log('GOG: No price data available');
-                }
-              }
-            } catch (priceError) {
-              console.error('Error fetching GOG product price:', priceError);
+            // Calcula o desconto corretamente
+            let discount = 0;
+            if (price.discountPercentage) {
+              discount = price.discountPercentage;
+            } else if (basePrice > finalPrice) {
+              discount = Math.round(((basePrice - finalPrice) / basePrice) * 100);
             }
+            
+            console.log(`GOG price: R$ ${finalPrice.toFixed(2)} (base: R$ ${basePrice.toFixed(2)}, discount: ${discount}%)`);
+            
+            prices.push({
+              store: 'GOG',
+              price: `R$ ${finalPrice.toFixed(2)}`,
+              originalPrice: `R$ ${basePrice.toFixed(2)}`,
+              discount: discount,
+              buyUrl: `https://www.gog.com/game/${gogMapping.slug}`,
+              available: true,
+              numericPrice: finalPrice,
+              numericOriginalPrice: basePrice
+            });
           } else {
-            console.log(`GOG: No products found for ${gameName}`);
+            console.log('GOG: No price data available');
           }
         } else {
-          console.log(`GOG API returned status ${gogResponse.status}`);
+          console.log(`GOG API returned status ${priceResponse.status}`);
         }
       } catch (error) {
         console.error('Error fetching GOG price:', error);
       }
+    } else {
+      console.log(`No GOG mapping found for Steam appid ${appid}`);
     }
 
     // Return only Steam and GOG prices (those that were found)

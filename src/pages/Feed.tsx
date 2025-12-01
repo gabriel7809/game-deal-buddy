@@ -150,12 +150,9 @@ const Feed = () => {
         { appid: "413150", genre: "Simulação/Fazenda" }, // Stardew Valley
         { appid: "105600", genre: "Aventura/Sandbox" }, // Terraria
         { appid: "367520", genre: "Metroidvania" }, // Hollow Knight
-        { appid: "1145360", genre: "Roguelike/Ação" }, // Hades
         { appid: "646570", genre: "Roguelike/Cartas" }, // Slay the Spire
         { appid: "588650", genre: "Roguelike/Ação" }, // Dead Cells
         { appid: "20900", genre: "RPG/Aventura" }, // The Witcher: Enhanced Edition
-        { appid: "268500", genre: "Plataforma/Ação" }, // INSIDE
-        { appid: "504230", genre: "Plataforma/Precisão" }, // Celeste
       ];
 
       // Busca todos os jogos em paralelo
