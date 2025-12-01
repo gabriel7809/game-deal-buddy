@@ -140,22 +140,22 @@ const Feed = () => {
     try {
       setLoading(true);
       
-      // Lista expandida de jogos populares com seus Steam App IDs
+      // Lista de jogos disponíveis tanto na Steam quanto na GOG
       const popularGames = [
-        { appid: "1174180", genre: "Ação/Aventura" }, // Red Dead Redemption 2
-        { appid: "2050650", genre: "Terror/Sobrevivência" }, // Resident Evil 4
-        { appid: "570940", genre: "RPG/Ação" }, // Dark Souls Remastered
+        { appid: "292030", genre: "RPG/Aventura" }, // The Witcher 3: Wild Hunt
         { appid: "1091500", genre: "RPG/Ação" }, // Cyberpunk 2077
-        { appid: "292030", genre: "RPG/Aventura" }, // The Witcher 3
-        { appid: "271590", genre: "Ação/Aventura" }, // Grand Theft Auto V
-        { appid: "1938090", genre: "FPS" }, // Call of Duty: Black Ops 6
-        { appid: "1151340", genre: "RPG/Aventura" }, // Fallout 4
-        { appid: "306130", genre: "MMORPG" }, // The Elder Scrolls Online
-        { appid: "2215430", genre: "Ação/Aventura" }, // Assassin's Creed Mirage
-        { appid: "976730", genre: "Simulação/Esportes" }, // Halo: The Master Chief Collection
-        { appid: "1449560", genre: "FPS" }, // Battlefield 2042
-        { appid: "1172380", genre: "Ação/Aventura" }, // Star Wars Jedi: Fallen Order
-        { appid: "1245620", genre: "Ação/Aventura" }, // Elden Ring
+        { appid: "1086940", genre: "RPG/Aventura" }, // Baldur's Gate 3
+        { appid: "435150", genre: "RPG/Aventura" }, // Divinity: Original Sin 2
+        { appid: "632470", genre: "RPG/Narrativo" }, // Disco Elysium
+        { appid: "413150", genre: "Simulação/Fazenda" }, // Stardew Valley
+        { appid: "105600", genre: "Aventura/Sandbox" }, // Terraria
+        { appid: "367520", genre: "Metroidvania" }, // Hollow Knight
+        { appid: "1145360", genre: "Roguelike/Ação" }, // Hades
+        { appid: "646570", genre: "Roguelike/Cartas" }, // Slay the Spire
+        { appid: "588650", genre: "Roguelike/Ação" }, // Dead Cells
+        { appid: "20900", genre: "RPG/Aventura" }, // The Witcher: Enhanced Edition
+        { appid: "268500", genre: "Plataforma/Ação" }, // INSIDE
+        { appid: "504230", genre: "Plataforma/Precisão" }, // Celeste
       ];
 
       // Busca todos os jogos em paralelo
